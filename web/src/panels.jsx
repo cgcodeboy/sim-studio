@@ -20,7 +20,7 @@ export function Toolbar() {
   return (
     <header className="toolbar">
       <i className="mark" />
-      <b>仿真台</b>
+      <b>Sim Studio</b>
       <Menu id="file" label="工程">
         <button type="button" onClick={() => dispatch({ type: "dialog", dialog: { kind: "project" } })}>新建工程</button>
         <button type="button" onClick={() => dispatch({ type: "dialog", dialog: { kind: "open" } })}>打开…</button>

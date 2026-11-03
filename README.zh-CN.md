@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/logo.jpg" alt="仿真台" width="160">
+  <img src="docs/logo.jpg" alt="Sim Studio" width="160">
 </p>
 
-<h1 align="center">仿真台</h1>
+<h1 align="center">Sim Studio</h1>
 
 <p align="center">
 浏览器里的仿真建模工作台。<br>
@@ -18,7 +18,7 @@
   <a href="#http-接口">HTTP 接口</a>
 </p>
 
-仿真台是一个建模工作台。人在浏览器里建工程，通过接口保存，一次只跑一个实验。浏览器持有正在编辑的副本，以及本次会话的撤销栈。已保存的工程和已结束的运行记录在 MongoDB 里。
+Sim Studio 在浏览器里建模。人在浏览器里建工程，通过接口保存，一次只跑一个实验。浏览器持有正在编辑的副本，以及本次会话的撤销栈。已保存的工程和已结束的运行记录在 MongoDB 里。
 
 页面、接口和数据库是三个进程。浏览器只访问页面进程。页面进程提供工作台，并把 `/api` 转给接口。接口是一个 Go 程序。des-engine 作为库链进这个程序，不是网络服务。
 
