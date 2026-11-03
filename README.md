@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <p align="center">
   <img src="docs/logo.jpg" alt="Sim Studio" width="160">
 </p>
@@ -276,4 +277,8 @@ Numbers on the canvas are des-engine results only when the sample says `source` 
 
 ## License
 
-No license file has been added. All rights reserved until one is chosen.
+Licensed under the [Apache License 2.0](LICENSE).
+=======
+# sim-studio
+A browser workbench for building and running simulation projects. One project can combine discrete-event flowcharts, agents, system dynamics, and industry-library blocks, with the discrete-event clock provided by des-engine.
+>>>>>>> f1b6bc673224ab24319154f29745f0b924dee1fa
