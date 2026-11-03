@@ -1,0 +1,28 @@
+name: sim-studio
+
+services:
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+  api:
+    build:
+      context: ../..
+      dockerfile: sim-studio/deploy/api.Dockerfile
+    environment:
+      SIM_MONGO: mongodb://mongo:27017
+    depends_on:
+      - mongo
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    environment:
+      API_ORIGIN: http://api:8080
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - api
+
+volumes:
+  mongo-data:
