@@ -19,7 +19,8 @@ func main() {
 	}
 	application, err := app.Open(ctx, uri)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("数据库没连上，工程保存不可用：%v", err)
+		application = app.Wire()
 	}
 	addr := os.Getenv("SIM_ADDR")
 	if addr == "" {

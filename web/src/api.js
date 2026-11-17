@@ -53,6 +53,10 @@ export function stopRecord(id, requestId) {
   return send("/api/records/" + encodeURIComponent(id) + "/stop", { method: "POST", body: JSON.stringify({ requestId }) });
 }
 
+export function turnDialogue(body) {
+  return send("/api/dialogue/turns", { method: "POST", body: JSON.stringify(body) });
+}
+
 export function setSpeed(id, requestId, speed) {
   return send("/api/records/" + encodeURIComponent(id) + "/speed", { method: "POST", body: JSON.stringify({ requestId, speed }) });
 }

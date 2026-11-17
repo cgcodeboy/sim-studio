@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { experimentSpec } from "./catalog.js";
 import Canvas from "./canvas.jsx";
-import { Overlays, Problems, ProjectTree, Properties, StatusBar, Toolbar } from "./panels.jsx";
+import { Overlays, Problems, ProjectTree, Properties, SessionPanel, StatusBar, Toolbar } from "./panels.jsx";
 import RunView from "./run.jsx";
 import { useStore } from "./store.jsx";
 
@@ -21,7 +21,8 @@ export default function App() {
   const columns = [
     state.ui.panels.tree ? "240px" : null,
     "minmax(0,1fr)",
-    state.ui.panels.props ? "280px" : null
+    state.ui.panels.props ? "280px" : null,
+    state.ui.panels.talk ? "320px" : null
   ].filter(Boolean).join(" ");
   const page = project?.experiments.find((item) => item.id === state.ui.pageId);
   const editing = state.ui.mode === "edit";
@@ -36,6 +37,7 @@ export default function App() {
           <Problems />
         </main>
         {state.ui.panels.props && <Properties />}
+        {state.ui.panels.talk && <SessionPanel />}
       </div>
       <StatusBar />
       <Overlays />

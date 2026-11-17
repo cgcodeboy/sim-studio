@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/cgcodeboy/sim-studio/api/handlers/dialogue"
 	"github.com/cgcodeboy/sim-studio/api/handlers/library"
 	"github.com/cgcodeboy/sim-studio/api/handlers/project"
 	"github.com/cgcodeboy/sim-studio/api/handlers/simulation"
@@ -10,11 +11,16 @@ import (
 
 func (s *server) routes() http.Handler {
 	catalog := library.New(s.app.Library)
-	projects := project.New(s.app.Model, s.app.Record)
-	simulations := simulation.New(s.app)
+	turns := dialogue.New(s.app.Library)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/library", catalog.List)
+	mux.HandleFunc("POST /api/dialogue/turns", turns.Turn)
+	if s.app.Model == nil || s.app.Record == nil {
+		return mux
+	}
+	projects := project.New(s.app.Model, s.app.Record)
+	simulations := simulation.New(s.app)
 	mux.HandleFunc("GET /api/projects", projects.List)
 	mux.HandleFunc("GET /api/projects/{id}", projects.Read)
 	mux.HandleFunc("PUT /api/projects/{id}", projects.Put)

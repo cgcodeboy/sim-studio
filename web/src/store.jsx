@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
-import { deleteProject, getRecord, listProjects, pauseRecord, putProject, readProject, resumeRecord, setSpeed, startRecord, stopRecord } from "./api.js";
+import { deleteProject, getRecord, listProjects, pauseRecord, putProject, readProject, resumeRecord, setSpeed, startRecord, stopRecord, turnDialogue } from "./api.js";
+import { applyTask, outline } from "./dialogue.js";
 import { blankProject, clone, collectProblems, pasteElements, projectAgent, projectExperiment, readSaved, SAVE_KEY, uid, addAgent, addElement, addExperiment, addLink, addPin, moveElement, removeAgent, removeElements, removeExperiment, removeLink, renameElement, setElementProp } from "./model.js";
 
 const Store = createContext(null);
@@ -9,6 +10,7 @@ function load() {
   return {
     session: {},
     saved: {},
+    talks: {},
     openId: null,
     past: [],
     future: [],
@@ -18,7 +20,7 @@ function load() {
       dialog: null,
       context: null,
       palette: "pml",
-      panels: { tree: true, props: true, problems: true, grid: true },
+      panels: { tree: true, props: true, problems: true, grid: true, talk: true },
       tabs: [],
       pageId: null,
       selected: null,
@@ -71,6 +73,21 @@ function pageOf(project, pageId) {
   return projectAgent(project, pageId) || projectExperiment(project, pageId);
 }
 
+function talkTitle(items) {
+  const used = new Set(items.map((item) => item.title));
+  let n = items.length + 1;
+  while (used.has("会话 " + n)) n += 1;
+  return "会话 " + n;
+}
+
+function blankTalk(items = []) {
+  return { id: uid(), title: talkTitle(items), named: false, messages: [] };
+}
+
+function withTalk(state, projectId, bag) {
+  return { ...state, talks: { ...state.talks, [projectId]: bag } };
+}
+
 function reducer(state, action) {
   switch (action.type) {
     case "menu":
@@ -93,6 +110,64 @@ function reducer(state, action) {
       return { ...state, ui: { ...state.ui, speed: action.value } };
     case "view":
       return { ...state, ui: { ...state.ui, view: action.value } };
+    case "newTalk": {
+      if (!state.openId) return state;
+      const bag = state.talks[state.openId] || { activeId: null, items: [] };
+      const talk = blankTalk(bag.items);
+      return withTalk(state, state.openId, { activeId: talk.id, items: [...bag.items, talk] });
+    }
+    case "selectTalk": {
+      const bag = state.talks[state.openId];
+      if (!bag || !bag.items.some((item) => item.id === action.id)) return state;
+      return withTalk(state, state.openId, { ...bag, activeId: action.id });
+    }
+    case "closeTalk": {
+      const bag = state.talks[state.openId];
+      if (!bag) return state;
+      const items = bag.items.filter((item) => item.id !== action.id);
+      const activeId = bag.activeId === action.id ? (items.at(-1)?.id || null) : bag.activeId;
+      return withTalk(state, state.openId, { activeId, items });
+    }
+    case "talkUser": {
+      const bag = state.talks[state.openId];
+      const text = (action.text || "").trim();
+      if (!bag || !text) return state;
+      const items = bag.items.map((item) => {
+        if (item.id !== action.talkId) return item;
+        const title = !item.named && item.messages.length === 0 ? text.slice(0, 18) : item.title;
+        return {
+          ...item,
+          title,
+          pending: true,
+          messages: [...item.messages, { id: uid(), role: "user", text }, { id: "pending", role: "assistant", text: "正在识别。", status: "进行中" }]
+        };
+      });
+      return withTalk(state, state.openId, { ...bag, items });
+    }
+    case "talkResult": {
+      const bag = state.talks[state.openId];
+      if (!bag) return state;
+      const task = action.task || { reply: "没有结果。", status: "未写入" };
+      const applied = action.applied || { project: current(state), changed: false };
+      const reply = applied.failed || task.reply;
+      const status = applied.failed ? "未写入" : task.status;
+      const items = bag.items.map((item) => {
+        if (item.id !== action.talkId) return item;
+        const messages = item.messages.map((message) => message.id === "pending" ? { id: uid(), role: "assistant", text: reply, status } : message);
+        return { ...item, pending: false, messages };
+      });
+      const next = withTalk(state, state.openId, { ...bag, items });
+      if (!applied.changed) return next;
+      const tabs = next.ui.tabs.includes(applied.pageId) ? next.ui.tabs : [...next.ui.tabs, applied.pageId];
+      return commit(next, applied.project, { pageId: applied.pageId, tabs, selected: applied.selected, mode: "edit", play: false });
+    }
+    case "renameTalk": {
+      const bag = state.talks[state.openId];
+      const name = (action.name || "").trim();
+      if (!bag || !name) return { ...state, ui: { ...state.ui, dialog: null } };
+      const items = bag.items.map((item) => item.id === action.id ? { ...item, title: name, named: true } : item);
+      return { ...withTalk(state, state.openId, { ...bag, items }), ui: { ...state.ui, dialog: null, context: null } };
+    }
     case "focusProject": {
       const source = state.session[action.id] || state.saved[action.id];
       if (!source) return state;
@@ -113,6 +188,7 @@ function reducer(state, action) {
     }
     case "createProject": {
       const project = blankProject(action.name.trim(), action.unit || "分钟");
+      const talk = blankTalk();
       return {
         ...state,
         openId: project.id,
@@ -120,6 +196,7 @@ function reducer(state, action) {
         past: [],
         future: [],
         runtime: null,
+        talks: { ...state.talks, [project.id]: { activeId: talk.id, items: [talk] } },
         ui: { ...state.ui, dialog: null, tabs: ["main"], pageId: "main", selected: { kind: "agent", id: "main" }, mode: "edit", play: false, showErrors: false, notice: "" }
       };
     }
@@ -470,6 +547,27 @@ export function StoreProvider({ children }) {
         return;
       }
       deleteProject(id).then(done, (error) => rawDispatch({ type: "notice", text: explain(error) }));
+      return;
+    }
+    if (action.type === "sendTalk") {
+      const snapshot = stateRef.current;
+      const text = (action.text || "").trim();
+      const bag = snapshot.talks[snapshot.openId];
+      const project = snapshot.session[snapshot.openId];
+      if (!bag || !project || !text || bag.items.some((item) => item.pending)) return;
+      const talkId = bag.activeId;
+      rawDispatch({ type: "talkUser", text, talkId });
+      turnDialogue(outline(project, snapshot.ui.pageId, text)).then(
+        (task) => {
+          const live = stateRef.current;
+          const applied = applyTask(live.session[live.openId] || project, task, live.ui.pageId);
+          rawDispatch({ type: "talkResult", talkId, task, applied });
+          if (!applied.failed && task.status === "已写入" && (task.intent === "run" || task.run)) setTimeout(() => dispatch({ type: "run" }), 0);
+          if (!applied.failed && task.intent === "pause") setTimeout(() => dispatch({ type: "pause" }), 0);
+          if (!applied.failed && task.intent === "stop") setTimeout(() => dispatch({ type: "stop" }), 0);
+        },
+        () => rawDispatch({ type: "talkResult", talkId, task: { intent: "clarify", reply: "对话服务没连上，工程没有改。", status: "未写入" }, applied: { changed: false } })
+      );
       return;
     }
     if (action.type === "run") {

@@ -37,7 +37,7 @@ export function Toolbar() {
         <button type="button" onClick={() => dispatch({ type: "remove" })}>删除</button>
       </Menu>
       <Menu id="view" label="视图">
-        {[["tree", "工程"], ["props", "属性"], ["problems", "问题"], ["grid", "网格"]].map(([key, name]) => (
+        {[["tree", "工程"], ["props", "属性"], ["talk", "会话"], ["problems", "问题"], ["grid", "网格"]].map(([key, name]) => (
           <button type="button" key={key} onClick={() => dispatch({ type: "panel", key })}>{panels[key] ? "✓ " : ""}{name}</button>
         ))}
       </Menu>
@@ -162,6 +162,58 @@ function Editor({ field, value, onChange }) {
   return <input aria-label={field.label} type={field.type === "number" ? "number" : "text"} value={value ?? ""} onFocus={focus} onChange={(event) => onChange(field.type === "number" ? Number(event.target.value) : event.target.value, false)} />;
 }
 
+export function SessionPanel() {
+  const { state, dispatch, project } = useStore();
+  const [draft, setDraft] = useState("");
+  const bag = project ? state.talks[project.id] : null;
+  const current = bag?.items.find((item) => item.id === bag.activeId) || null;
+  const send = () => {
+    const text = draft.trim();
+    if (!text || !current) return;
+    dispatch({ type: "sendTalk", text });
+    setDraft("");
+  };
+  return (
+    <aside className="talk">
+      <div className="talk-head">
+        <h2>会话</h2>
+        <button type="button" disabled={!project} onClick={() => dispatch({ type: "newTalk" })}>新会话</button>
+      </div>
+      {!project && <p className="empty-note">先打开工程。会话绑在这个工程上。</p>}
+      {project && <>
+        <div className="talk-list">
+          {(bag?.items || []).map((item) => (
+            <button type="button" key={item.id} className={item.id === bag.activeId ? "on" : ""}
+              onClick={() => dispatch({ type: "selectTalk", id: item.id })}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                dispatch({ type: "selectTalk", id: item.id });
+                dispatch({ type: "context", context: { x: event.clientX, y: event.clientY, kind: "talk", id: item.id, name: item.title } });
+              }}>
+              <b>{item.title}</b>
+              <span aria-label="删除会话" onClick={(event) => { event.stopPropagation(); dispatch({ type: "closeTalk", id: item.id }); }}>×</span>
+            </button>
+          ))}
+        </div>
+        <div className="talk-log">
+          {current && current.messages.length === 0 && <p className="empty-note">写要做的事，例如：在 Main 上加一个 Delay。</p>}
+          {current?.messages.map((message) => (
+            <div key={message.id} className={"bubble " + message.role}>
+              <div>{message.text}</div>
+              {message.status && <div className="turn">{message.status}</div>}
+            </div>
+          ))}
+        </div>
+        <form className="talk-compose" onSubmit={(event) => { event.preventDefault(); send(); }}>
+          <textarea aria-label="会话内容" value={draft} disabled={!current || current.pending} placeholder={current ? "描述要做的事" : "先新建会话"} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} />
+          <button type="submit" disabled={!current || current.pending || !draft.trim()}>发送</button>
+        </form>
+      </>}
+    </aside>
+  );
+}
+
 export function Properties() {
   const { state, dispatch, project, agent } = useStore();
   const selected = state.ui.selected;
@@ -268,6 +320,7 @@ function Dialogs() {
   if (dialog.kind === "agent") return <NameUnit title="新建智能体" unit={false} onClose={close} onSubmit={(name) => dispatch({ type: "createAgent", name })} />;
   if (dialog.kind === "experiment") return <ExperimentDialog onClose={close} />;
   if (dialog.kind === "rename") return <NameUnit title="重命名" unit={false} initial={dialog.name} onClose={close} onSubmit={(name) => dispatch({ type: "rename", name, target: dialog.target })} />;
+  if (dialog.kind === "renameTalk") return <NameUnit title="重命名会话" unit={false} initial={dialog.name} onClose={close} onSubmit={(name) => dispatch({ type: "renameTalk", id: dialog.id, name })} />;
   if (dialog.kind === "saveAs") return <NameUnit title="另存为" unit={false} initial={dialog.name} onClose={close} onSubmit={(name) => dispatch({ type: "saveAs", name })} />;
   if (dialog.kind === "open") return <OpenDialog onClose={close} />;
   if (dialog.kind === "module") return <ModuleDialog agentId={dialog.agentId} onClose={close} />;
@@ -406,6 +459,10 @@ function ContextMenu() {
   };
   const buttons = [];
   const push = (label, run) => buttons.push(<button type="button" key={label} onClick={run}>{label}</button>);
+  if (menu.kind === "talk") {
+    push("重命名", () => ask({ kind: "renameTalk", id: menu.id, name: menu.name }));
+    push("删除", () => dispatch({ type: "closeTalk", id: menu.id }));
+  }
   if (menu.kind === "tree") push("新建工程", () => ask({ kind: "project" }));
   if (menu.kind === "project" && project) {
     const exp = project.experiments.find((item) => item.type === "simulation") || project.experiments[0];

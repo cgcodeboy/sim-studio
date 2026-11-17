@@ -22,9 +22,28 @@ button:disabled { opacity: .45; cursor: default; }
 .menu-pop button:hover, .submenu button:hover, .context button:hover, .tree button.on, .tree button[aria-current="true"] { background: #eef4ff; }
 .context { position: fixed; z-index: 40; }
 .work { min-height: 0; display: grid; }
-.tree, .palette, .props { min-width: 0; min-height: 0; overflow: auto; background: #fff; }
+.tree, .palette, .props, .talk { min-width: 0; min-height: 0; background: #fff; }
+.tree, .palette, .props { overflow: auto; }
 .tree, .palette { border-right: 1px solid var(--line); padding-top: 8px; }
-.props { border-left: 1px solid var(--line); }
+.props, .talk { border-left: 1px solid var(--line); }
+.talk { display: flex; flex-direction: column; }
+.talk-head { display: flex; align-items: center; justify-content: space-between; padding-right: 8px; flex: none; }
+.talk-head h2 { padding-right: 0; }
+.talk-head > button { padding: 2px 8px; }
+.talk-list { flex: none; max-height: 132px; overflow: auto; border-bottom: 1px solid var(--line); }
+.talk-list button { display: flex; width: 100%; align-items: center; gap: 8px; text-align: left; border: 0; border-radius: 0; background: transparent; padding: 6px 10px; }
+.talk-list button.on { background: #eef4ff; box-shadow: inset 3px 0 0 var(--blue); }
+.talk-list b { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.talk-list span { color: var(--muted); padding: 0 4px; }
+.talk-log { flex: 1; min-height: 0; overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.talk-log .bubble { max-width: 92%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); }
+.talk-log .user { align-self: flex-end; background: #eef4ff; border-color: #d5e3fb; }
+.talk-log .assistant { align-self: flex-start; background: #fff; }
+.talk-log .turn { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.talk-compose { flex: none; display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--line); }
+.talk-compose textarea { flex: 1; min-height: 52px; resize: none; border: 1px solid #d5deea; border-radius: 6px; padding: 6px 8px; }
+.talk-compose button { align-self: flex-end; background: var(--blue); color: #fff; border-color: var(--blue); padding: 6px 12px; }
+.talk .empty-note { margin: 10px; }
 .center { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #f3f6fa; }
 h2 { margin: 0; padding: 7px 10px 4px; font-size: 11px; letter-spacing: .04em; color: var(--muted); font-weight: 650; }
 .treehead { display: flex; align-items: center; justify-content: space-between; padding-right: 8px; }
