@@ -1,4 +1,4 @@
-// Package dialogue 是对话这门业务。它做一轮意图，并交出要不要改工程。
+// Package dialogue 是对话这门业务。它在返回前完成计划、执行和检查。
 package dialogue
 
 import (

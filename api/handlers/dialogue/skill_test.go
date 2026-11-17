@@ -29,8 +29,22 @@ func TestNormalizeSkipsOtherFamily(t *testing.T) {
 	}
 }
 
+func TestPlanDropsUnknownDomain(t *testing.T) {
+	planned := parsePlan(`{"steps":[{"domain":"process","work":"洗瓶"},{"domain":"clarify","work":"不行"}],"accept":"有洗瓶"}`)
+	if len(planned.Steps) != 1 || planned.Steps[0].Domain != "process" || planned.Accept != "有洗瓶" {
+		t.Fatalf("%+v", planned)
+	}
+}
+
+func TestVerdictReadsGaps(t *testing.T) {
+	result := parseVerdict(`{"ok":false,"gaps":["没有冻干"]}`)
+	if result.OK || len(result.Gaps) != 1 || result.Gaps[0] != "没有冻干" {
+		t.Fatalf("%+v", result)
+	}
+}
+
 func TestSkillsAreLoaded(t *testing.T) {
-	names := append([]string{"router"}, specialists...)
+	names := append([]string{"router", "planner", "checker"}, specialists...)
 	for _, name := range names {
 		text, ok := skillPrompt(name, nil)
 		if !ok || !strings.Contains(text, "JSON") {

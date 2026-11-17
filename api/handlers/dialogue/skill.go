@@ -23,71 +23,15 @@ type skillCall struct {
 }
 
 func askSkills(ctx context.Context, key string, known map[string]bool, in Input) (Task, bool) {
-	names, ok := routeTo(ctx, key, in.Text)
-	if !ok {
-		return Task{}, false
-	}
-	if len(names) == 0 {
-		return clarify("这句话需要先指定一个领域，工程没有改。"), true
-	}
-	return mergeSkills(ctx, skillCall{key: key, known: known, in: in}, names)
+	return runLoop(ctx, skillCall{key: key, known: known, in: in})
 }
 
-func routeTo(ctx context.Context, key, text string) ([]string, bool) {
-	prompt, ok := skillPrompt("router", nil)
-	if !ok {
-		return nil, false
-	}
-	content, ok := complete(ctx, key, prompt, text+"\n按系统要求只输出 JSON。", 256)
-	if !ok {
-		return nil, false
-	}
-	names := specialistNames(content)
-	if len(names) == 0 {
-		log.Printf("dialogue: route empty %s", clip(content))
-		return nil, true
-	}
-	log.Printf("dialogue: route %s", strings.Join(names, ","))
-	return names, true
-}
-
-func mergeSkills(ctx context.Context, call skillCall, names []string) (Task, bool) {
-	var types []string
-	var placed Task
-	var hasPlace bool
-	for _, name := range names {
-		task, ok := askSpecialist(ctx, call, name)
-		if !ok {
-			continue
-		}
-		if task.Intent == "place" && task.Status == "已写入" {
-			types = append(types, task.Types...)
-			if !hasPlace {
-				placed = task
-			}
-			placed.Chain = placed.Chain || task.Chain
-			placed.Run = placed.Run || task.Run
-			hasPlace = true
-			continue
-		}
-		if !hasPlace && task.Status == "已写入" {
-			return task, true
-		}
-	}
-	if !hasPlace {
-		return clarify("模型没有给出可执行的结果，工程没有改。"), true
-	}
-	placed.Intent = "place"
-	placed.Types = types
-	return finish(placed), true
-}
-
-func askSpecialist(ctx context.Context, call skillCall, name string) (Task, bool) {
+func askSpecialist(ctx context.Context, call skillCall, name, user string) (Task, bool) {
 	prompt, ok := skillPrompt(name, call.known)
 	if !ok {
 		return Task{}, false
 	}
-	content, ok := complete(ctx, call.key, prompt, skillUser(call.in), 4096)
+	content, ok := complete(ctx, call.key, prompt, user, 4096)
 	if !ok {
 		return Task{}, false
 	}
@@ -100,7 +44,26 @@ func skillPrompt(name string, known map[string]bool) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	return strings.ReplaceAll(string(raw), "{{TYPES}}", typeList(name, known)), true
+	text := strings.ReplaceAll(string(raw), "{{TYPES}}", typeList(name, known))
+	return strings.ReplaceAll(text, "{{CATALOG}}", catalogByFamily(known)), true
+}
+
+func catalogByFamily(known map[string]bool) string {
+	var order []string
+	seen := map[string]bool{}
+	grouped := map[string][]string{}
+	for _, item := range active(known) {
+		if !seen[item.family] {
+			seen[item.family] = true
+			order = append(order, item.family)
+		}
+		grouped[item.family] = append(grouped[item.family], item.display)
+	}
+	var lines []string
+	for _, family := range order {
+		lines = append(lines, family+"："+strings.Join(grouped[family], "、"))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func typeList(name string, known map[string]bool) string {
