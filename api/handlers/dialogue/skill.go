@@ -120,14 +120,21 @@ func clip(content string) string {
 
 func skillUser(in Input) string {
 	var text strings.Builder
-	text.WriteString("页面名是 " + in.Page + "。agent 填这个名字，不要写「当前页」。\n")
-	if len(in.Agents) > 0 {
-		text.WriteString("已有智能体：")
-		for i, item := range in.Agents {
+	page := in.Page
+	if page == "" {
+		page = "Main"
+	}
+	text.WriteString("当前打开的是 " + page + "。没有点名智能体时，agent 填这个名字。点名了别的智能体，agent 填那个名字。\n")
+	for _, item := range in.Agents {
+		text.WriteString(item.Name + "：")
+		if len(item.Elements) == 0 {
+			text.WriteString("还没有模块")
+		}
+		for i, element := range item.Elements {
 			if i > 0 {
-				text.WriteString("，")
+				text.WriteString("、")
 			}
-			text.WriteString(item.Name)
+			text.WriteString(element.Name + "（" + element.Type + "）")
 		}
 		text.WriteString("。\n")
 	}

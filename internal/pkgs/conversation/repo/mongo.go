@@ -34,6 +34,24 @@ func (r *Mongo) Save(ctx context.Context, session domain.Session) error {
 	return err
 }
 
+func (r *Mongo) List(ctx context.Context, project string) ([]domain.Session, error) {
+	cursor, err := r.sessions.Find(ctx, bson.M{"project": project})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var items []domain.Session
+	if err := cursor.All(ctx, &items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (r *Mongo) Delete(ctx context.Context, id string) error {
+	_, err := r.sessions.DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
 func (r *Mongo) Facts(ctx context.Context, project string) ([]domain.Fact, error) {
 	var doc struct {
 		Facts []domain.Fact `bson:"facts"`

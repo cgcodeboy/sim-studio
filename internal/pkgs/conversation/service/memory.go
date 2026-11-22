@@ -44,7 +44,17 @@ func (s *Service) Commit(ctx context.Context, in domain.Commit) (domain.Job, err
 	}
 	stored.ID = in.Session
 	stored.Project = in.Project
+	first := len(stored.Turns) == 0
 	stored.Turns = append(stored.Turns, in.Turn)
+	if !stored.Named && first {
+		if title := clipText(in.Turn.User, 18); title != "" {
+			stored.Title = title
+		}
+	}
+	if stored.Title == "" {
+		stored.Title = "会话 1"
+	}
+	stored.Updated = now()
 	if err := s.repo.Save(ctx, stored); err != nil {
 		return domain.Job{}, err
 	}

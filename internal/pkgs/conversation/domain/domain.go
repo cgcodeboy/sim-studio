@@ -1,7 +1,10 @@
 // Package domain 是会话的领域接口。它不引用其他领域，也不保存工程正文。
 package domain
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // Turn 是一个会话里的一轮。结果是已经返回给页面的那句话。
 type Turn struct {
@@ -11,13 +14,25 @@ type Turn struct {
 	Status string `json:"status" bson:"status"`
 }
 
-// Session 是一次对话。摘要只覆盖被挤出窗口的更早轮次。
+// Session 是一个工程上的一次对话。它不属于某一个智能体。摘要只覆盖被挤出窗口的更早轮次。
 type Session struct {
 	ID      string `json:"id" bson:"_id"`
 	Project string `json:"project" bson:"project"`
+	Title   string `json:"title" bson:"title"`
+	Named   bool   `json:"named" bson:"named"`
+	Updated int64  `json:"updated" bson:"updated"`
 	Turns   []Turn `json:"turns" bson:"turns"`
-	Summary string `json:"summary" bson:"summary"`
-	Covered int    `json:"covered" bson:"covered"`
+	Summary string `json:"summary,omitempty" bson:"summary,omitempty"`
+	Covered int    `json:"covered,omitempty" bson:"covered,omitempty"`
+}
+
+// Card 是列表里的一条会话，不含轮次。
+type Card struct {
+	ID      string `json:"id"`
+	Project string `json:"project"`
+	Title   string `json:"title"`
+	Named   bool   `json:"named"`
+	Updated int64  `json:"updated"`
 }
 
 // Fact 是一个工程上跨会话仍成立的一条事实。
@@ -46,16 +61,28 @@ type Job struct {
 	Covered int
 }
 
+var (
+	ErrNotFound = errors.New("notfound")
+	ErrInvalid  = errors.New("invalid")
+)
+
 // Repository 保存会话和工程级事实。
 type Repository interface {
 	Load(ctx context.Context, id string) (Session, error)
 	Save(ctx context.Context, session Session) error
+	List(ctx context.Context, project string) ([]Session, error)
+	Delete(ctx context.Context, id string) error
 	Facts(ctx context.Context, project string) ([]Fact, error)
 	ReplaceFacts(ctx context.Context, project string, facts []Fact) error
 }
 
 // Service 是会话的入口。
 type Service interface {
+	List(ctx context.Context, project string) ([]Card, error)
+	Create(ctx context.Context, project string) (Session, error)
+	Open(ctx context.Context, id string) (Session, error)
+	Rename(ctx context.Context, id, title string) (Session, error)
+	Delete(ctx context.Context, id string) error
 	Recall(ctx context.Context, project, session string) (View, error)
 	Commit(ctx context.Context, in Commit) (Job, error)
 	SaveSummary(ctx context.Context, session, summary string, covered int) error

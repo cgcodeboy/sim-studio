@@ -57,6 +57,26 @@ export function turnDialogue(body) {
   return send("/api/dialogue/turns", { method: "POST", body: JSON.stringify(body) });
 }
 
+export function listSessions(projectId) {
+  return send("/api/dialogue/sessions?project=" + encodeURIComponent(projectId));
+}
+
+export function createSession(projectId) {
+  return send("/api/dialogue/sessions", { method: "POST", body: JSON.stringify({ project: projectId }) });
+}
+
+export function readSession(id) {
+  return send("/api/dialogue/sessions/" + encodeURIComponent(id));
+}
+
+export function renameSession(id, title) {
+  return send("/api/dialogue/sessions/" + encodeURIComponent(id), { method: "PUT", body: JSON.stringify({ title }) });
+}
+
+export function deleteSession(id) {
+  return send("/api/dialogue/sessions/" + encodeURIComponent(id), { method: "DELETE" });
+}
+
 export function setSpeed(id, requestId, speed) {
   return send("/api/records/" + encodeURIComponent(id) + "/speed", { method: "POST", body: JSON.stringify({ requestId, speed }) });
 }

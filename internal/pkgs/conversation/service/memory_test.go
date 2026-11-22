@@ -56,3 +56,66 @@ func TestSummaryStartsAfterTwelveTurns(t *testing.T) {
 		t.Fatalf("%+v", job)
 	}
 }
+
+func TestSessionsBelongToTheProject(t *testing.T) {
+	svc := New(repo.New())
+	ctx := context.Background()
+	first, err := svc.Create(ctx, "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.Create(ctx, "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := svc.Create(ctx, "p2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Title != "会话 1" || second.Title != "会话 2" || other.Project != "p2" {
+		t.Fatalf("%+v %+v %+v", first, second, other)
+	}
+	_, err = svc.Commit(ctx, domain.Commit{Project: "p1", Session: first.ID, Turn: domain.Turn{User: "洗瓶要 8 分钟", Reply: "已改。", Status: "已写入"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.Recall(ctx, "p1", second.ID)
+	if err != nil || len(view.Recent) != 0 {
+		t.Fatalf("%+v %v", view, err)
+	}
+	opened, err := svc.Open(ctx, first.ID)
+	if err != nil || len(opened.Turns) != 1 || opened.Title != "洗瓶要 8 分钟" {
+		t.Fatalf("%+v %v", opened, err)
+	}
+	renamed, err := svc.Rename(ctx, first.ID, "粉针")
+	if err != nil || !renamed.Named || renamed.Title != "粉针" {
+		t.Fatalf("%+v", renamed)
+	}
+	if _, err = svc.Commit(ctx, domain.Commit{Project: "p1", Session: first.ID, Turn: domain.Turn{User: "再加一道灯检", Status: "未写入"}}); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := svc.Open(ctx, first.ID)
+	if err != nil || kept.Title != "粉针" || len(kept.Turns) != 2 {
+		t.Fatalf("%+v", kept)
+	}
+	cards, err := svc.List(ctx, "p1")
+	if err != nil || len(cards) != 2 {
+		t.Fatalf("%+v %v", cards, err)
+	}
+	seen := map[string]bool{}
+	for i, card := range cards {
+		seen[card.ID] = true
+		if i > 0 && card.Updated > cards[i-1].Updated {
+			t.Fatalf("order %+v", cards)
+		}
+	}
+	if !seen[first.ID] || !seen[second.ID] {
+		t.Fatalf("%+v", cards)
+	}
+	if err = svc.Delete(ctx, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Open(ctx, second.ID); err != domain.ErrNotFound {
+		t.Fatal(err)
+	}
+}

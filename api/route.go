@@ -16,6 +16,11 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/library", catalog.List)
 	mux.HandleFunc("POST /api/dialogue/turns", turns.Turn)
+	mux.HandleFunc("GET /api/dialogue/sessions", turns.ListSessions)
+	mux.HandleFunc("POST /api/dialogue/sessions", turns.CreateSession)
+	mux.HandleFunc("GET /api/dialogue/sessions/{id}", turns.ReadSession)
+	mux.HandleFunc("PUT /api/dialogue/sessions/{id}", turns.RenameSession)
+	mux.HandleFunc("DELETE /api/dialogue/sessions/{id}", turns.DeleteSession)
 	if s.app.Model == nil || s.app.Record == nil {
 		return mux
 	}

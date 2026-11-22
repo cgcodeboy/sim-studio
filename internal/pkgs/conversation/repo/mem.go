@@ -35,6 +35,25 @@ func (r *Memory) Save(_ context.Context, session domain.Session) error {
 	return nil
 }
 
+func (r *Memory) List(_ context.Context, project string) ([]domain.Session, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var items []domain.Session
+	for _, session := range r.sessions {
+		if session.Project == project {
+			items = append(items, cloneSession(session))
+		}
+	}
+	return items, nil
+}
+
+func (r *Memory) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.sessions, id)
+	return nil
+}
+
 func (r *Memory) Facts(_ context.Context, project string) ([]domain.Fact, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

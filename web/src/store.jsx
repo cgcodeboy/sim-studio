@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
-import { deleteProject, getRecord, listProjects, pauseRecord, putProject, readProject, resumeRecord, setSpeed, startRecord, stopRecord, turnDialogue } from "./api.js";
+import { deleteProject, deleteSession, getRecord, listProjects, listSessions, createSession, pauseRecord, putProject, readProject, readSession, renameSession, resumeRecord, setSpeed, startRecord, stopRecord, turnDialogue } from "./api.js";
 import { applyTask, outline } from "./dialogue.js";
+import { cardTalk, talkFromSession } from "./talks.js";
 import { blankProject, clone, collectProblems, pasteElements, projectAgent, projectExperiment, readSaved, SAVE_KEY, uid, addAgent, addElement, addExperiment, addLink, addPin, moveElement, removeAgent, removeElements, removeExperiment, removeLink, renameElement, setElementProp } from "./model.js";
 
 const Store = createContext(null);
@@ -110,6 +111,28 @@ function reducer(state, action) {
       return { ...state, ui: { ...state.ui, speed: action.value } };
     case "view":
       return { ...state, ui: { ...state.ui, view: action.value } };
+    case "talksLoaded": {
+      if (action.projectId !== state.openId) return state;
+      const opened = talkFromSession(action.opened);
+      const items = (action.cards || []).map((card) => card.id === opened.id ? opened : cardTalk(card));
+      if (!items.some((item) => item.id === opened.id)) items.unshift(opened);
+      return withTalk(state, action.projectId, { activeId: opened.id, items });
+    }
+    case "talkOpened": {
+      if (action.projectId !== state.openId) return state;
+      const bag = state.talks[action.projectId] || { activeId: null, items: [] };
+      const talk = talkFromSession(action.session);
+      const items = [talk, ...bag.items.filter((item) => item.id !== talk.id)];
+      return withTalk(state, action.projectId, { activeId: talk.id, items });
+    }
+    case "talkFilled": {
+      if (action.projectId !== state.openId) return state;
+      const bag = state.talks[action.projectId];
+      if (!bag) return state;
+      const filled = talkFromSession(action.session);
+      const items = bag.items.map((item) => item.id === filled.id && !item.pending ? filled : item);
+      return withTalk(state, action.projectId, { ...bag, items });
+    }
     case "newTalk": {
       if (!state.openId) return state;
       const bag = state.talks[state.openId] || { activeId: null, items: [] };
@@ -188,7 +211,6 @@ function reducer(state, action) {
     }
     case "createProject": {
       const project = blankProject(action.name.trim(), action.unit || "分钟");
-      const talk = blankTalk();
       return {
         ...state,
         openId: project.id,
@@ -196,7 +218,6 @@ function reducer(state, action) {
         past: [],
         future: [],
         runtime: null,
-        talks: { ...state.talks, [project.id]: { activeId: talk.id, items: [talk] } },
         ui: { ...state.ui, dialog: null, tabs: ["main"], pageId: "main", selected: { kind: "agent", id: "main" }, mode: "edit", play: false, showErrors: false, notice: "" }
       };
     }
@@ -521,6 +542,7 @@ function explain(error) {
 export function StoreProvider({ children }) {
   const [state, rawDispatch] = useReducer(reducer, null, load);
   const stateRef = useRef(state);
+  const loadingTalks = useRef(false);
   stateRef.current = state;
   const dispatch = useCallback((action) => {
     if (action.type === "save" || action.type === "saveAs") {
@@ -612,6 +634,55 @@ export function StoreProvider({ children }) {
       );
       return;
     }
+    if (action.type === "newTalk" || action.type === "closeTalk" || action.type === "renameTalk" || action.type === "selectTalk") {
+      const snapshot = stateRef.current;
+      const projectId = snapshot.openId;
+      if (!projectId) return;
+      if (action.type === "newTalk") {
+        if (loadingTalks.current) return;
+        createSession(projectId).then(
+          (session) => rawDispatch({ type: "talkOpened", projectId, session }),
+          () => rawDispatch({ type: "notice", text: "会话没有建起来。" })
+        );
+        return;
+      }
+      if (action.type === "renameTalk") {
+        renameSession(action.id, action.name).then(
+          (session) => rawDispatch({ type: "renameTalk", id: action.id, name: session.title }),
+          () => rawDispatch({ type: "notice", text: "会话没有改名。" })
+        );
+        return;
+      }
+      if (action.type === "closeTalk") {
+        const bag = snapshot.talks[projectId];
+        deleteSession(action.id).then(
+          () => {
+            rawDispatch({ type: "closeTalk", id: action.id });
+            const items = (bag?.items || []).filter((item) => item.id !== action.id);
+            const activeId = bag?.activeId === action.id ? (items.at(-1)?.id || null) : bag?.activeId;
+            const active = items.find((item) => item.id === activeId);
+            if (active && !active.loaded) {
+              readSession(active.id).then(
+                (session) => rawDispatch({ type: "talkFilled", projectId, session }),
+                () => rawDispatch({ type: "notice", text: "这条会话没有读回来。" })
+              );
+            }
+          },
+          () => rawDispatch({ type: "notice", text: "会话没有删掉。" })
+        );
+        return;
+      }
+      const bag = snapshot.talks[projectId];
+      const item = bag?.items.find((entry) => entry.id === action.id);
+      if (!item) return;
+      rawDispatch(action);
+      if (item.loaded) return;
+      readSession(action.id).then(
+        (session) => rawDispatch({ type: "talkFilled", projectId, session }),
+        () => rawDispatch({ type: "notice", text: "这条会话没有读回来。" })
+      );
+      return;
+    }
     rawDispatch(action);
   }, []);
   useEffect(() => {
@@ -633,6 +704,32 @@ export function StoreProvider({ children }) {
     })();
     return () => { cancel = true; };
   }, []);
+  useEffect(() => {
+    const projectId = state.openId;
+    if (!projectId) return undefined;
+    let cancel = false;
+    loadingTalks.current = true;
+    (async () => {
+      try {
+        let cards = await listSessions(projectId);
+        if (cancel) return;
+        if (!cards || cards.length === 0) {
+          const created = await createSession(projectId);
+          if (cancel) return;
+          rawDispatch({ type: "talksLoaded", projectId, cards: [created], opened: created });
+          return;
+        }
+        const opened = await readSession(cards[0].id);
+        if (cancel) return;
+        rawDispatch({ type: "talksLoaded", projectId, cards, opened });
+      } catch {
+        if (!cancel) rawDispatch({ type: "notice", text: "会话没有读回来。" });
+      } finally {
+        if (!cancel) loadingTalks.current = false;
+      }
+    })();
+    return () => { cancel = true; };
+  }, [state.openId]);
   useEffect(() => {
     if (!state.ui.play || !state.runtime?.recordId) return undefined;
     const recordId = state.runtime.recordId;
