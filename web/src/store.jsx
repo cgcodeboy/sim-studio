@@ -671,17 +671,3 @@ export function StoreProvider({ children }) {
   }, [state, dispatch]);
   return <Store.Provider value={api}>{children}</Store.Provider>;
 }
-
-export function selectionName(project, selected) {
-  if (!project || !selected) return "";
-  if (selected.kind === "project") return project.name;
-  if (selected.kind === "agent") return projectAgent(project, selected.id)?.name || "";
-  if (selected.kind === "experiment") return projectExperiment(project, selected.id)?.name || "";
-  if (selected.kind === "element") {
-    for (const agent of project.agents) {
-      const element = agent.elements.find((item) => item.id === selected.id);
-      if (element) return element.name;
-    }
-  }
-  return "";
-}

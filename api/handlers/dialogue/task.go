@@ -20,6 +20,8 @@ type Task struct {
 	To      string         `json:"to,omitempty"`
 	Chain   bool           `json:"chain,omitempty"`
 	Run     bool           `json:"run,omitempty"`
+	Gap     int            `json:"gap,omitempty"`
+	More    []Task         `json:"more,omitempty"`
 }
 
 type element struct {
@@ -72,6 +74,11 @@ func finish(task Task) Task {
 	case "tie":
 		task.Status = "已写入"
 		task.Reply = "已把空着的输出口接到 Sink。"
+	case "layout":
+		task.Status = "已写入"
+		if strings.TrimSpace(task.Reply) == "" {
+			task.Reply = "已把模块按流程排开。"
+		}
 	default:
 		task.Intent = "clarify"
 		task.Status = "未写入"

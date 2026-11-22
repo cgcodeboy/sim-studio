@@ -11,17 +11,25 @@ import (
 const planRounds = 3
 
 type planStep struct {
-	Domain string   `json:"domain"`
-	Intent string   `json:"intent"`
-	Work   string   `json:"work"`
-	Types  []string `json:"types"`
-	Chain  bool     `json:"chain"`
-	Run    bool     `json:"run"`
+	Domain  string   `json:"domain"`
+	Intent  string   `json:"intent"`
+	Work    string   `json:"work"`
+	Types   []string `json:"types"`
+	Element string   `json:"element"`
+	Key     string   `json:"key"`
+	Value   any      `json:"value"`
+	From    string   `json:"from"`
+	To      string   `json:"to"`
+	Chain   bool     `json:"chain"`
+	Run     bool     `json:"run"`
 }
 
 type plan struct {
+	Act    string     `json:"act"`
+	Say    string     `json:"say"`
 	Steps  []planStep `json:"steps"`
 	Accept string     `json:"accept"`
+	Gap    int        `json:"gap,omitempty"`
 }
 
 type verdict struct {
@@ -38,15 +46,20 @@ func runLoop(ctx context.Context, call skillCall) (Task, bool) {
 		if !ok {
 			continue
 		}
-		if len(planned.Steps) == 0 {
-			return clarify("这句话还看不出要建什么。先说产品和要经过的工序。"), true
+		if task, done := readyTask(planned, call.in.Page); done {
+			return task, true
 		}
-		task, ok := executePlan(ctx, call, planned)
+		if len(planned.Steps) == 0 {
+			gaps = "没有动作。缺决定用 guide，只问一个问题。做不到用 refuse，say 以做不到开头并写理由。"
+			continue
+		}
+		task, ok := executeAll(ctx, call, planned)
 		if !ok {
+			gaps = "动作没有做完。缺的决定用 guide 问，不要只写说明。"
 			continue
 		}
 		last, has = task, true
-		if task.Intent != "place" || task.Status != "已写入" {
+		if len(task.More) > 0 || task.Intent != "place" || task.Status != "已写入" {
 			return task, true
 		}
 		passed, next := review(ctx, call, planned, task)
@@ -58,7 +71,7 @@ func runLoop(ctx context.Context, call skillCall) (Task, bool) {
 		gaps = next
 	}
 	if !has {
-		return Task{}, false
+		return refuseTask("这一轮没有形成可执行的改动。"), true
 	}
 	return last, true
 }
@@ -144,12 +157,15 @@ func parsePlan(content string) plan {
 	if err := json.Unmarshal([]byte(extractJSON(content)), &planned); err != nil {
 		return plan{}
 	}
+	planned.Act = strings.ToLower(strings.TrimSpace(planned.Act))
 	var steps []planStep
 	for _, step := range planned.Steps {
 		step.Domain = strings.ToLower(strings.TrimSpace(step.Domain))
-		if knownSpecialist(step.Domain) {
-			steps = append(steps, step)
+		step.Intent = strings.ToLower(strings.TrimSpace(step.Intent))
+		if (planned.Act == "" || planned.Act == "build") && step.Domain != "" && !knownSpecialist(step.Domain) {
+			continue
 		}
+		steps = append(steps, step)
 	}
 	planned.Steps = steps
 	return planned
@@ -193,4 +209,75 @@ func stepUser(in Input, step planStep) string {
 
 func checkUser(in Input, accept string, task Task) string {
 	return "需求：" + in.Text + "\n完成标准：" + accept + "\n实际模块：" + strings.Join(task.Types, "、") + "\nchain：" + strconv.FormatBool(task.Chain) + "\n只输出 JSON。"
+}
+
+func readyTask(planned plan, page string) (Task, bool) {
+	switch planned.Act {
+	case "guide":
+		return clarify(spoken(planned.Say, "你已经说了一部分。还缺哪一个决定？")), true
+	case "refuse":
+		return refuseTask(planned.Say), true
+	case "query":
+		return clarify(spoken(planned.Say, "这句没读成可执行的计划。")), true
+	case "layout":
+		if hasOtherWork(planned) {
+			return Task{}, false
+		}
+		return finish(Task{Intent: "layout", Agent: page, Reply: spoken(planned.Say, ""), Gap: layoutGap(planned.Gap)}), true
+	case "control":
+		if hasOtherWork(planned) {
+			return Task{}, false
+		}
+		intent := "run"
+		if len(planned.Steps) > 0 && controlIntent(planned.Steps[0].Intent) {
+			intent = planned.Steps[0].Intent
+		}
+		return finish(Task{Intent: intent, Agent: page}), true
+	default:
+		return Task{}, false
+	}
+}
+
+func taskFromStep(step planStep, page string) (Task, bool) {
+	task := Task{Intent: step.Intent, Agent: page, Element: step.Element, Key: step.Key, Value: step.Value, From: step.From, To: step.To}
+	switch step.Intent {
+	case "set":
+		if step.Element == "" || step.Key == "" || step.Value == nil {
+			return Task{}, false
+		}
+	case "link":
+		if step.From == "" || step.To == "" {
+			return Task{}, false
+		}
+	case "remove":
+		if step.Element == "" {
+			return Task{}, false
+		}
+	case "tie":
+	default:
+		return Task{}, false
+	}
+	return task, true
+}
+
+func controlIntent(intent string) bool {
+	return intent == "run" || intent == "pause" || intent == "stop"
+}
+
+func layoutGap(gap int) int {
+	if gap < 4 {
+		return 8
+	}
+	if gap > 40 {
+		return 40
+	}
+	return gap
+}
+
+func spoken(say, fallback string) string {
+	say = strings.TrimSpace(say)
+	if say == "" {
+		return fallback
+	}
+	return say
 }

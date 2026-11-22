@@ -43,6 +43,55 @@ func TestVerdictReadsGaps(t *testing.T) {
 	}
 }
 
+func TestQueryAnswersWithoutBuilding(t *testing.T) {
+	task, ok := readyTask(plan{Act: "query", Say: "这条线先洗瓶再灌装。"}, "Main")
+	if !ok || task.Status != "未写入" || task.Reply != "这条线先洗瓶再灌装。" {
+		t.Fatalf("%+v", task)
+	}
+}
+
+func TestLayoutArrangesTheOpenPage(t *testing.T) {
+	task, ok := readyTask(plan{Act: "layout"}, "Main")
+	if !ok || task.Intent != "layout" || task.Status != "已写入" || task.Agent != "Main" || task.Gap != 8 {
+		t.Fatalf("%+v", task)
+	}
+}
+
+func TestTightLayoutKeepsTheRequestedGap(t *testing.T) {
+	task, ok := readyTask(plan{Act: "layout", Gap: 4}, "Main")
+	if !ok || task.Gap != 4 {
+		t.Fatalf("%+v", task)
+	}
+}
+
+func TestGuideAsksOneQuestion(t *testing.T) {
+	task, ok := readyTask(plan{Act: "guide", Say: "你说想做个工厂。先定产品：药、食品，还是零件？"}, "Main")
+	if !ok || task.Status != "未写入" || task.Reply != "你说想做个工厂。先定产品：药、食品，还是零件？" {
+		t.Fatalf("%+v", task)
+	}
+}
+
+func TestRefuseNamesTheReason(t *testing.T) {
+	task, ok := readyTask(plan{Act: "refuse", Say: "页面上没有冻干柜。"}, "Main")
+	if !ok || task.Status != "未写入" || task.Reply != "做不到。页面上没有冻干柜。" {
+		t.Fatalf("%+v", task)
+	}
+}
+
+func TestPackKeepsTheFollowingAction(t *testing.T) {
+	head := pack([]Task{{Intent: "set", Status: "已写入"}, {Intent: "layout", Status: "已写入"}}, "先改时间，再收紧。")
+	if head.Intent != "set" || len(head.More) != 1 || head.More[0].Intent != "layout" || head.Reply != "先改时间，再收紧。" {
+		t.Fatalf("%+v", head)
+	}
+}
+
+func TestChangeStepSetsTheNamedElement(t *testing.T) {
+	task, ok := taskFromStep(planStep{Intent: "set", Element: "delay", Key: "delay", Value: "8分钟"}, "Main")
+	if !ok || task.Intent != "set" || task.Element != "delay" || task.Value != "8分钟" {
+		t.Fatalf("%+v", task)
+	}
+}
+
 func TestSkillsAreLoaded(t *testing.T) {
 	names := append([]string{"router", "planner", "checker"}, specialists...)
 	for _, name := range names {

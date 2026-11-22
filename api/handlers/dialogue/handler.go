@@ -46,7 +46,7 @@ func (h *Handler) decide(ctx context.Context, in Input) Task {
 }
 
 func withPage(task Task, in Input) Task {
-	if task.Intent == "clarify" || task.Intent == "run" || task.Intent == "pause" || task.Intent == "stop" || knownAgent(in, task.Agent) {
+	if task.Intent == "clarify" || task.Intent == "layout" || task.Intent == "run" || task.Intent == "pause" || task.Intent == "stop" || knownAgent(in, task.Agent) {
 		return task
 	}
 	task.Agent = pickAgent(in, in.Text)
