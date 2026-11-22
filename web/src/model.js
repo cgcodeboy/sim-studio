@@ -1,4 +1,5 @@
 import { defaultProps, experimentSpec, findType, isEntry, isExit } from "./catalog.js";
+import { METER } from "./meshkit.js";
 
 export function uid(prefix) {
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -74,14 +75,53 @@ export function addElement(project, agentId, type, x, y) {
     h: spec.h,
     props: defaultProps(spec.fields)
   };
+  element.pose = initialPose(element);
   agent.elements.push(element);
   return { project: next, id };
+}
+
+export function initialPose(element) {
+  const w = element.w || 140;
+  const h = element.h || 72;
+  const yaw = h > w * 1.2 ? Math.PI / 2 : 0;
+  return {
+    x: Math.round(((element.x || 0) + w / 2) * METER * 1000) / 1000,
+    z: Math.round(((element.y || 0) + h / 2) * METER * 1000) / 1000,
+    yaw: Math.round(yaw * 1000) / 1000
+  };
+}
+
+export function freezePoses(project) {
+  const next = clone(project);
+  let changed = false;
+  for (const agent of next.agents || []) {
+    for (const element of agent.elements || []) {
+      if (element.pose && Number.isFinite(element.pose.x) && Number.isFinite(element.pose.z)) continue;
+      element.pose = initialPose(element);
+      changed = true;
+    }
+  }
+  return changed ? next : project;
 }
 
 export function moveElement(project, agentId, elementId, x, y) {
   const next = clone(project);
   const element = projectAgent(next, agentId)?.elements.find((item) => item.id === elementId);
   if (element) { element.x = Math.round(x / 10) * 10; element.y = Math.round(y / 10) * 10; }
+  return next;
+}
+
+export function setPose(project, agentId, elementId, pose) {
+  if (!pose || !Number.isFinite(pose.x) || !Number.isFinite(pose.z)) return project;
+  const next = clone(project);
+  const element = projectAgent(next, agentId)?.elements.find((item) => item.id === elementId);
+  if (!element) return project;
+  const yaw = Number.isFinite(pose.yaw) ? pose.yaw : 0;
+  element.pose = {
+    x: Math.round(pose.x * 1000) / 1000,
+    z: Math.round(pose.z * 1000) / 1000,
+    yaw: Math.round(yaw * 1000) / 1000
+  };
   return next;
 }
 
@@ -168,6 +208,10 @@ export function pasteElements(project, agentId, payload, dx = 24, dy = 24) {
     copy.name = uniqueName(agent, element.name);
     copy.x += dx;
     copy.y += dy;
+    if (copy.pose) {
+      copy.pose.x += dx * METER;
+      copy.pose.z += dy * METER;
+    }
     agent.elements.push(copy);
     created.push(id);
   }

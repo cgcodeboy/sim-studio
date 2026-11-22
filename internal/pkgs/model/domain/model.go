@@ -44,6 +44,12 @@ type Agent struct {
 	Links    []Link    `json:"links" bson:"links"`
 }
 
+type Pose struct {
+	X   float64 `json:"x" bson:"x"`
+	Z   float64 `json:"z" bson:"z"`
+	Yaw float64 `json:"yaw" bson:"yaw"`
+}
+
 type Element struct {
 	ID    string         `json:"id" bson:"id"`
 	Name  string         `json:"name" bson:"name"`
@@ -53,6 +59,7 @@ type Element struct {
 	Y     float64        `json:"y" bson:"y"`
 	W     float64        `json:"w" bson:"w"`
 	H     float64        `json:"h" bson:"h"`
+	Pose  *Pose          `json:"pose,omitempty" bson:"pose,omitempty"`
 	Props map[string]any `json:"props" bson:"props"`
 }
 

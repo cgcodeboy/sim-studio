@@ -1,12 +1,12 @@
 import { useEffect } from "react";
 import { experimentSpec } from "./catalog.js";
 import { projectAgent } from "./model.js";
-import Canvas from "./canvas.jsx";
 import { rightMode, useDock } from "./dock.js";
 import { Icon } from "./icons.jsx";
 import { Overlays, Problems, ProjectTree, Properties, Runs, SessionPanel, StatusBar, Toolbar } from "./panels.jsx";
 import RunView from "./run.jsx";
 import { useStore } from "./store.jsx";
+import { MapStage } from "./view3d.jsx";
 
 function clamp(min, max, value) {
   return Math.min(max, Math.max(min, value));
@@ -67,7 +67,7 @@ export default function App() {
               <Icon name={mapOn ? "chevronUp" : "chevronDown"} size={14} />
             </button>
           </div>
-          {mapOn && (editing ? (page ? <ExperimentSheet /> : <Canvas />) : <RunView />)}
+          {mapOn && (editing ? (page ? <ExperimentSheet /> : <MapStage />) : <RunView />)}
           <Problems />
           <SessionDock dock={dock} setDock={setDock} />
         </main>

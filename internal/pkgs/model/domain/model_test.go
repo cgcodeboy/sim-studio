@@ -17,6 +17,14 @@ func sampleProject() Project {
 	}
 }
 
+func TestPoseIsOptional(t *testing.T) {
+	p := sampleProject()
+	p.Agents[0].Elements[0].Pose = &Pose{X: 1.2, Z: 3.4, Yaw: 0.5}
+	if err := Validate(p); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRejectsBrokenLink(t *testing.T) {
 	p := sampleProject()
 	p.Agents[0].Links[0].To = "missing"

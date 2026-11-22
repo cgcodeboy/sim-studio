@@ -1,8 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { METER } from "./meshkit.js";
+import Canvas from "./canvas.jsx";
+import { bindEdit, attachPick } from "./edit3d.js";
+import { METER, spot } from "./meshkit.js";
 import { buildModel, carton, release, tickModels } from "./models3d.js";
 import { useStore } from "./store.jsx";
 
@@ -17,12 +19,11 @@ function frameCamera(camera, controls, elements) {
   let minZ = Infinity;
   let maxZ = -Infinity;
   elements.forEach((element) => {
-    const x = ((element.x || 0) + (element.w || 140) / 2) * METER;
-    const z = ((element.y || 0) + (element.h || 72) / 2) * METER;
-    minX = Math.min(minX, x);
-    maxX = Math.max(maxX, x);
-    minZ = Math.min(minZ, z);
-    maxZ = Math.max(maxZ, z);
+    const at = spot(element);
+    minX = Math.min(minX, at.x);
+    maxX = Math.max(maxX, at.x);
+    minZ = Math.min(minZ, at.z);
+    maxZ = Math.max(maxZ, at.z);
   });
   const dist = Math.max(maxX - minX, maxZ - minZ, 2) * 0.85 + 3.2;
   controls.target.set((minX + maxX) / 2, 0.85, (minZ + maxZ) / 2);
@@ -83,11 +84,22 @@ function syncWorld(scene, live, bag) {
     bag.stations.delete(id);
   });
   elements.forEach((element) => {
-    if (bag.stations.has(element.id)) return;
-    const mesh = buildModel(element);
-    bag.stations.set(element.id, mesh);
-    scene.add(mesh);
+    let mesh = bag.stations.get(element.id);
+    if (!mesh) {
+      mesh = buildModel(element);
+      bag.stations.set(element.id, mesh);
+      scene.add(mesh);
+      attachPick(mesh);
+    }
+    const held = bag.hold?.id === element.id ? bag.hold : null;
+    const at = held || spot(element);
+    mesh.position.set(at.x, 0, at.z);
+    mesh.rotation.y = at.yaw;
+    if (held && Math.hypot(spot(element).x - held.x, spot(element).z - held.z) < 0.02) bag.hold = null;
   });
+  const chosen = bag.stations.get(live.current.selectedId);
+  bag.ring.visible = !!chosen;
+  if (chosen) bag.ring.position.set(chosen.position.x, 0.03, chosen.position.z);
   if (!bag.framed && elements.length) {
     frameCamera(bag.camera, bag.controls, elements);
     bag.framed = true;
@@ -110,6 +122,17 @@ function syncWorld(scene, live, bag) {
   });
 }
 
+function selectionRing() {
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.42, 0.5, 40),
+    new THREE.MeshBasicMaterial({ color: 0x6d5efc, side: THREE.DoubleSide, depthWrite: false })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.03;
+  ring.visible = false;
+  return ring;
+}
+
 function mount(el, live) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -126,19 +149,23 @@ function mount(el, live) {
   controls.maxPolarAngle = Math.PI / 2.08;
   controls.minDistance = 1.1;
   controls.maxDistance = 48;
-  const bag = { stations: new Map(), tokens: new Map(), camera, controls, framed: false };
+  const ring = selectionRing();
+  scene.add(ring);
+  const bag = { stations: new Map(), tokens: new Map(), camera, controls, framed: false, ring };
   const timer = new THREE.Timer();
   timer.connect(document);
   const watch = watchSize(el, camera, renderer);
+  const unbind = bindEdit(renderer.domElement, camera, bag, live);
   renderer.setAnimationLoop(() => {
     timer.update();
     syncWorld(scene, live, bag);
-    tickModels(scene, timer.getElapsed());
+    if (!live.current.editing) tickModels(scene, timer.getElapsed());
     controls.update(timer.getDelta());
     renderer.render(scene, camera);
   });
   return () => {
     renderer.setAnimationLoop(null);
+    unbind();
     watch.disconnect();
     controls.dispose();
     timer.dispose();
@@ -151,11 +178,38 @@ function mount(el, live) {
 }
 
 export default function View3D() {
-  const { state, agent } = useStore();
+  const { state, agent, dispatch } = useStore();
   const host = useRef(null);
-  const live = useRef({ elements: [], movers: [] });
-  live.current = { elements: agent?.elements || [], movers: state.runtime?.movers || [] };
+  const live = useRef({ elements: [], movers: [], editing: false, selectedId: null, dispatch });
+  const editing = state.ui.mode === "edit";
+  const selectedId = state.ui.selected?.kind === "element" ? state.ui.selected.id : null;
+  live.current = {
+    elements: agent?.elements || [],
+    movers: editing ? [] : (state.runtime?.movers || []),
+    editing,
+    selectedId,
+    dispatch
+  };
   useEffect(() => mount(host.current, live), []);
   const empty = (agent?.elements || []).length === 0;
   return <div className="view3d" ref={host}>{empty && <p className="empty-note">这一页还没有模块，三维里没有东西可看。</p>}</div>;
+}
+
+export function MapStage() {
+  const { state, dispatch, agent } = useStore();
+  const three = state.ui.view === "3d";
+  const loose = (agent?.elements || []).some((item) => !item.pose || !Number.isFinite(item.pose.x));
+  useLayoutEffect(() => {
+    if (loose) dispatch({ type: "freezePoses" });
+  }, [loose, dispatch]);
+  return (
+    <div className="mapstage">
+      <div className="mapbar">
+        <button type="button" aria-pressed={!three} onClick={() => dispatch({ type: "view", value: "2d" })}>2D</button>
+        <button type="button" aria-pressed={three} onClick={() => dispatch({ type: "view", value: "3d" })}>3D</button>
+        {three && <span>拖模型布置位置，按住 Shift 再拖是旋转</span>}
+      </div>
+      {three ? <View3D /> : <Canvas />}
+    </div>
+  );
 }

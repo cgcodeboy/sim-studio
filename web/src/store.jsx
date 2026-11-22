@@ -3,7 +3,7 @@ import { deleteProject, deleteSession, getRecord, listProjects, listSessions, cr
 import { applyTask, outline } from "./dialogue.js";
 import { advanceExperiment, advanceFlow, flowMovers, initialRuntime } from "./sim.js";
 import { cardTalk, talkFromSession } from "./talks.js";
-import { blankProject, clone, collectProblems, pasteElements, projectAgent, projectExperiment, experimentsOn, readSaved, SAVE_KEY, uid, addAgent, addElement, addExperiment, addLink, addPin, moveElement, removeAgent, removeElements, removeExperiment, removeLink, renameElement, setElementProp } from "./model.js";
+import { blankProject, clone, collectProblems, pasteElements, projectAgent, projectExperiment, experimentsOn, readSaved, SAVE_KEY, uid, addAgent, addElement, addExperiment, addLink, addPin, freezePoses, moveElement, removeAgent, removeElements, removeExperiment, removeLink, renameElement, setElementProp, setPose } from "./model.js";
 
 const Store = createContext(null);
 export function useStore() { return useContext(Store); }
@@ -408,6 +408,19 @@ function reducer(state, action) {
       const next = moveElement(project, state.ui.pageId, action.id, action.x, action.y);
       return action.history === false ? { ...state, session: { ...state.session, [next.id]: next } } : commit(state, next);
     }
+    case "pose": {
+      const project = current(state);
+      const next = setPose(project, state.ui.pageId, action.id, action.pose);
+      if (next === project) return state;
+      return action.history === false ? { ...state, session: { ...state.session, [next.id]: next } } : commit(state, next);
+    }
+    case "freezePoses": {
+      const project = current(state);
+      if (!project) return state;
+      const next = freezePoses(project);
+      if (next === project) return state;
+      return { ...state, session: { ...state.session, [next.id]: next } };
+    }
     case "setProp": {
       const project = current(state);
       const next = setElementProp(project, state.ui.pageId, action.id, action.key, action.value);
@@ -496,7 +509,7 @@ function reducer(state, action) {
       return {
         ...state,
         runtime: { ...action.result.sample, recordId: action.result.recordId, status: action.result.status },
-        ui: { ...state.ui, mode: "run", play: true, showErrors: false, view: "2d", notice: "", context: null, dialog: null }
+        ui: { ...state.ui, mode: "run", play: true, showErrors: false, notice: "", context: null, dialog: null }
       };
     case "sample": {
       const status = action.result.status;

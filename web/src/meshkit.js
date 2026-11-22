@@ -107,11 +107,19 @@ export function lengthOf(element, min) {
   return Math.max(min, Math.max(element.w || 0, element.h || 0) * METER);
 }
 
+export function spot(element) {
+  const pose = element?.pose;
+  if (pose && Number.isFinite(pose.x) && Number.isFinite(pose.z)) {
+    return { x: pose.x, z: pose.z, yaw: Number.isFinite(pose.yaw) ? pose.yaw : 0 };
+  }
+  return { x: 0, z: 0, yaw: 0 };
+}
+
 export function place(element, group) {
-  const w = element.w || 140;
-  const h = element.h || 72;
-  group.position.set(((element.x || 0) + w / 2) * METER, 0, ((element.y || 0) + h / 2) * METER);
-  if (h > w * 1.2) group.rotation.y = Math.PI / 2;
+  const at = spot(element);
+  group.position.set(at.x, 0, at.z);
+  group.rotation.y = at.yaw;
+  group.userData.elementId = element.id;
   return group;
 }
 
