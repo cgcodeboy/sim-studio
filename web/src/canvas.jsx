@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { findType } from "./catalog.js";
+import { Icon, moduleIcon } from "./icons.jsx";
 import { collectProblems } from "./model.js";
 import { activeStateId, stockLevel } from "./sim.js";
 import { useStore } from "./store.jsx";
@@ -74,7 +75,15 @@ function Face({ element, runtime, running, dispatch }) {
     return <div className="face stock">{element.name}<br />{Number(level).toFixed(0)}</div>;
   }
   if (look === "branch") return <div className="face branch" />;
-  return <div className={"face " + look}>{element.type}<br />{element.name}</div>;
+  if (look === "flow" || look === "resource") {
+    return (
+      <div className={"face " + look}>
+        <span className="glyph"><Icon name={moduleIcon(element.type, look)} size={18} /></span>
+        <span className="copy"><b>{element.name}</b><i>{element.type}</i></span>
+      </div>
+    );
+  }
+  return <div className={"face " + look}>{element.name}</div>;
 }
 
 export default function Canvas({ running = false }) {
@@ -166,7 +175,7 @@ export default function Canvas({ running = false }) {
       <div className="ruler">{[0, 100, 200, 300, 400, 500, 600, 700].map((n) => <span key={n}>{n}</span>)}</div>
       <div
         className={"frame" + space + (drop ? " drop" : "")}
-        style={{ width: agent.w, height: agent.h }}
+        style={{ minWidth: agent.w, minHeight: agent.h }}
         onClick={(event) => { if (event.target.closest(".port, .el")) return; dispatch({ type: "linkStart", port: null }); }}
         onContextMenu={(event) => {
           if (event.target.closest(".el")) return;
@@ -184,7 +193,7 @@ export default function Canvas({ running = false }) {
           dispatch({ type: "addElement", elementType: type, x: event.clientX - rect.left, y: event.clientY - rect.top });
         }}
       >
-        <svg className="links" width={agent.w} height={agent.h}>
+        <svg className="links" width="100%" height="100%">
           {agent.links.map((link) => {
             const from = agent.elements.find((item) => item.id === link.from);
             const to = agent.elements.find((item) => item.id === link.to);

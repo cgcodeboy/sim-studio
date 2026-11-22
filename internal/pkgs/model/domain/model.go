@@ -68,6 +68,7 @@ type Experiment struct {
 	ID    string         `json:"id" bson:"id"`
 	Name  string         `json:"name" bson:"name"`
 	Type  string         `json:"type" bson:"type"`
+	Page  string         `json:"page,omitempty" bson:"page,omitempty"`
 	Props map[string]any `json:"props" bson:"props"`
 }
 
@@ -142,6 +143,11 @@ func Validate(p Project) error {
 			return &Error{Code: CodeInvalid}
 		}
 		exps[exp.ID] = struct{}{}
+		if exp.Page != "" {
+			if _, ok := agents[exp.Page]; !ok {
+				return &Error{Code: CodeInvalid}
+			}
+		}
 		if exp.Type == "simulation" {
 			simOK = true
 		}

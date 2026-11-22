@@ -1,6 +1,7 @@
 import { experimentSpec } from "./catalog.js";
 import Canvas from "./canvas.jsx";
 import { useStore } from "./store.jsx";
+import View3D from "./view3d.jsx";
 
 function clock(time, unit) {
   if (unit === "秒") return time.toFixed(1) + " 秒";
@@ -31,17 +32,7 @@ function Controls() {
 }
 
 function Scene3D() {
-  const { state } = useStore();
-  const movers = state.runtime?.movers || [];
-  return (
-    <div className="scene">
-      <div className="stage3d">
-        {movers.map((mover) => (
-          <div key={mover.id} className="cube here" style={{ left: Math.max(8, mover.x / 4), top: Math.max(8, mover.y / 4) }}>{mover.id}</div>
-        ))}
-      </div>
-    </div>
-  );
+  return <View3D />;
 }
 
 function MapRun() {

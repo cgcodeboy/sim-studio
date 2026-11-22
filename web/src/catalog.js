@@ -19,10 +19,12 @@ function autoPorts(type) {
 }
 
 function flow(type, fields = [], ports) {
-  return { type, kind: "flow", look: "flow", fields, ports: ports || autoPorts(type), w: type === "Select Output 5" ? 118 : 104, h: type === "Select Output 5" ? 92 : 52 };
+  const portsOf = ports || autoPorts(type);
+  const outs = portsOf.out || 0;
+  return { type, kind: "flow", look: "flow", fields, ports: portsOf, w: outs > 2 ? 168 : 156, h: Math.max(84, 28 + outs * 22) };
 }
 function resource(type, fields = []) {
-  return { type, kind: "resource", look: "resource", fields, ports: { inn: 0, out: 0 }, w: 112, h: 52 };
+  return { type, kind: "resource", look: "resource", fields, ports: { inn: 0, out: 0 }, w: 156, h: 84 };
 }
 function mark(type, fields = [], look = "mark", w = 132, h = 68) {
   return { type, kind: "markup", look, fields, ports: { inn: 0, out: 0 }, w, h };

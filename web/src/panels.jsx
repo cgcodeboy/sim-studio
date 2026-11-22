@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { EXPERIMENTS, LIBRARIES, experimentSpec, findType } from "./catalog.js";
-import { collectProblems, projectAgent } from "./model.js";
+import { rightMode, useDock } from "./dock.js";
+import { Icon } from "./icons.jsx";
+import { collectProblems, experimentsOn, projectAgent } from "./model.js";
 import { useStore } from "./store.jsx";
 
 function Menu({ id, label, children }) {
@@ -16,11 +18,11 @@ function Menu({ id, label, children }) {
 
 export function Toolbar() {
   const { state, dispatch, project } = useStore();
+  const [dock, setDock] = useDock();
   const panels = state.ui.panels;
   return (
     <header className="toolbar">
-      <i className="mark" />
-      <b>Sim Studio</b>
+      <b className="brand"><span className="badge-ico brand"><Icon name="spark" /></span>Sim Studio</b>
       <Menu id="file" label="工程">
         <button type="button" onClick={() => dispatch({ type: "dialog", dialog: { kind: "project" } })}>新建工程</button>
         <button type="button" onClick={() => dispatch({ type: "dialog", dialog: { kind: "open" } })}>打开…</button>
@@ -37,20 +39,20 @@ export function Toolbar() {
         <button type="button" onClick={() => dispatch({ type: "remove" })}>删除</button>
       </Menu>
       <Menu id="view" label="视图">
-        {[["tree", "工程"], ["props", "属性"], ["talk", "会话"], ["problems", "问题"], ["grid", "网格"]].map(([key, name]) => (
+        <button type="button" onClick={() => setDock({ left: dock.left === "shut" ? "pages" : "shut" })}>{dock.left === "shut" ? "" : "✓ "}工程</button>
+        <button type="button" onClick={() => setDock({ bottom: dock.bottom === false })}>{dock.bottom !== false ? "✓ " : ""}会话</button>
+        <button type="button" onClick={() => setDock({ right: rightMode(dock) === "props" ? "shut" : "props" })}>{rightMode(dock) === "props" ? "✓ " : ""}属性</button>
+        <button type="button" onClick={() => setDock({ right: rightMode(dock) === "runs" ? "shut" : "runs" })}>{rightMode(dock) === "runs" ? "✓ " : ""}仿真</button>
+        <button type="button" onClick={() => setDock({ map: dock.map === false })}>{dock.map === false ? "" : "✓ "}地图</button>
+        {[["problems", "问题"], ["grid", "网格"]].map(([key, name]) => (
           <button type="button" key={key} onClick={() => dispatch({ type: "panel", key })}>{panels[key] ? "✓ " : ""}{name}</button>
         ))}
       </Menu>
       <Menu id="help" label="帮助">
         <button type="button" onClick={() => dispatch({ type: "help", value: true })}>快捷键</button>
       </Menu>
-      <span className="crumb">{project ? project.name + " / " + (state.ui.pageId === "main" ? "Main" : pageTitle(project, state.ui.pageId)) : ""}</span>
+      {project && <span className="crumb">{project.name + " / " + (state.ui.pageId === "main" ? "Main" : pageTitle(project, state.ui.pageId))}</span>}
       <span className="spacer" />
-      <button type="button" onClick={() => dispatch({ type: "undo" })}>撤销</button>
-      <button type="button" className="runbtn" onClick={() => dispatch({ type: state.ui.play ? "pause" : state.ui.mode === "pause" ? "resume" : "run" })}>
-        {state.ui.play ? "暂停" : state.ui.mode === "pause" ? "继续" : "运行"}
-      </button>
-      {state.ui.mode !== "edit" && <button type="button" onClick={() => dispatch({ type: "stop" })}>停止</button>}
     </header>
   );
 }
@@ -59,94 +61,39 @@ function pageTitle(project, id) {
   return project.agents.find((item) => item.id === id)?.name || project.experiments.find((item) => item.id === id)?.name || "";
 }
 
-function listedProjects(state) {
-  const map = new Map();
-  Object.values(state.saved).forEach((project) => map.set(project.id, project));
-  Object.values(state.session).forEach((project) => map.set(project.id, project));
-  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "zh"));
-}
-
 export function ProjectTree() {
-  const { state, dispatch } = useStore();
-  const [collapsed, setCollapsed] = useState(() => new Set());
-  const projects = listedProjects(state);
+  const { state, dispatch, project } = useStore();
   const selected = state.ui.selected;
-  const mark = (projectId, kind, id) => projectId === state.openId && selected?.kind === kind && selected.id === id ? "true" : undefined;
-  const openBranch = (id) => setCollapsed((prev) => {
-    if (!prev.has(id)) return prev;
-    const next = new Set(prev);
-    next.delete(id);
-    return next;
-  });
-  const toggle = (id, opened) => setCollapsed((prev) => {
-    const next = new Set(prev);
-    if (opened) next.add(id);
-    else next.delete(id);
-    return next;
-  });
-  const focus = (projectId, pageId, kind, id) => dispatch({ type: "focusProject", id: projectId, pageId, selected: { kind, id } });
+  const mark = (kind, id) => selected?.kind === kind && selected.id === id ? "true" : undefined;
+  const focus = (pageId, kind, id) => dispatch({ type: "focusProject", id: project.id, pageId, selected: { kind, id } });
   const menu = (event, context) => {
     event.preventDefault();
     event.stopPropagation();
-    if (context.projectId) focus(context.projectId, context.pageId, context.selected.kind, context.selected.id);
-    dispatch({ type: "context", context: { x: event.clientX, y: event.clientY, ...context } });
+    if (context.selected) focus(context.pageId, context.selected.kind, context.selected.id);
+    dispatch({ type: "context", context: { x: event.clientX, y: event.clientY, projectId: project.id, ...context } });
   };
+  if (!project) return <aside className="tree"><p className="empty-note">先打开工程。</p></aside>;
   return (
-    <aside className="tree" onContextMenu={(event) => { if (event.target.closest("button")) return; menu(event, { kind: "tree" }); }}>
-      {projects.map((project) => {
-        const opened = !collapsed.has(project.id);
-        return (
-          <div key={project.id}>
-            <div className="prow">
-              <button type="button" className="twist" aria-label={opened ? "折叠" : "展开"} onClick={() => toggle(project.id, opened)}>{opened ? "▾" : "▸"}</button>
-              <button type="button" className={"node root" + (project.id === state.openId ? " on" : "")} aria-current={project.id === state.openId ? "true" : undefined}
-                onClick={() => { openBranch(project.id); focus(project.id, "main", "project", project.id); }}
-                onContextMenu={(event) => menu(event, { kind: "project", id: project.id, projectId: project.id, pageId: "main", selected: { kind: "project", id: project.id } })}>
-                {project.name}
-              </button>
-            </div>
-            {opened && <>
-              <div className="prow">
-                <button type="button" className="node group" onContextMenu={(event) => menu(event, { kind: "agents", id: project.id, projectId: project.id, pageId: "main", selected: { kind: "project", id: project.id } })}>智能体</button>
-                <button type="button" className="mini" aria-label="新建智能体" onClick={() => { focus(project.id, "main", "project", project.id); dispatch({ type: "dialog", dialog: { kind: "agent" } }); }}>＋</button>
-              </div>
-              {project.agents.map((agent) => (
-                <div key={agent.id}>
-                  <div className="prow">
-                    <button type="button" className="node agent" aria-current={mark(project.id, "agent", agent.id)}
-                      onClick={() => focus(project.id, agent.id, "agent", agent.id)}
-                      onContextMenu={(event) => menu(event, { kind: "agent", id: agent.id, projectId: project.id, pageId: agent.id, selected: { kind: "agent", id: agent.id } })}>
-                      {agent.name}
-                    </button>
-                    <button type="button" className="mini" aria-label={"往 " + agent.name + " 加模块"} onClick={() => { focus(project.id, agent.id, "agent", agent.id); dispatch({ type: "dialog", dialog: { kind: "module", agentId: agent.id } }); }}>＋</button>
-                  </div>
-                  {agent.elements.map((element) => (
-                    <button type="button" key={element.id} className="node child" aria-current={mark(project.id, "element", element.id)}
-                      onClick={() => focus(project.id, agent.id, "element", element.id)}
-                      onContextMenu={(event) => menu(event, { kind: "element", id: element.id, projectId: project.id, pageId: agent.id, selected: { kind: "element", id: element.id } })}>
-                      {element.name}
-                    </button>
-                  ))}
-                </div>
-              ))}
-              <div className="prow">
-                <button type="button" className="node group" onContextMenu={(event) => menu(event, { kind: "experiments", id: project.id, projectId: project.id, pageId: "main", selected: { kind: "project", id: project.id } })}>实验</button>
-                <button type="button" className="mini" aria-label="新建实验" onClick={() => { focus(project.id, "main", "project", project.id); dispatch({ type: "dialog", dialog: { kind: "experiment" } }); }}>＋</button>
-              </div>
-              {project.experiments.map((item) => {
-                const spec = experimentSpec(item.type);
-                return (
-                  <button type="button" key={item.id} className="node agent" aria-current={mark(project.id, "experiment", item.id)}
-                    onClick={() => focus(project.id, item.id, "experiment", item.id)}
-                    onContextMenu={(event) => menu(event, { kind: "experiment", id: item.id, projectId: project.id, pageId: item.id, selected: { kind: "experiment", id: item.id } })}>
-                    {item.name}{spec.name !== item.name && <i className="meta">{spec.name}</i>}
-                  </button>
-                );
-              })}
-            </>}
+    <aside className="tree" onContextMenu={(event) => { if (event.target.closest("button")) return; menu(event, { kind: "project", id: project.id, pageId: "main", selected: { kind: "project", id: project.id } }); }}>
+      {project.agents.map((agent) => (
+        <div key={agent.id}>
+          <div className="prow">
+            <button type="button" className={"node page" + (mark("agent", agent.id) ? " on" : "")} aria-current={mark("agent", agent.id)}
+              onClick={() => focus(agent.id, "agent", agent.id)}
+              onContextMenu={(event) => menu(event, { kind: "agent", id: agent.id, pageId: agent.id, selected: { kind: "agent", id: agent.id } })}>
+              <span className="badge-ico page"><Icon name="layout" /></span>{agent.name}
+            </button>
+            <button type="button" className="mini" aria-label={"往 " + agent.name + " 加模块"} onClick={() => { focus(agent.id, "agent", agent.id); dispatch({ type: "dialog", dialog: { kind: "module", agentId: agent.id } }); }}>＋</button>
           </div>
-        );
-      })}
+          {agent.elements.map((element) => (
+            <button type="button" key={element.id} className="node child" aria-current={mark("element", element.id)}
+              onClick={() => focus(agent.id, "element", element.id)}
+              onContextMenu={(event) => menu(event, { kind: "element", id: element.id, pageId: agent.id, selected: { kind: "element", id: element.id } })}>
+              <span className="badge-ico mod"><Icon name="box" /></span>{element.name}<i className="meta">{element.type}</i>
+            </button>
+          ))}
+        </div>
+      ))}
     </aside>
   );
 }
@@ -162,7 +109,7 @@ function Editor({ field, value, onChange }) {
   return <input aria-label={field.label} type={field.type === "number" ? "number" : "text"} value={value ?? ""} onFocus={focus} onChange={(event) => onChange(field.type === "number" ? Number(event.target.value) : event.target.value, false)} />;
 }
 
-export function SessionPanel() {
+export function SessionPanel({ onClose }) {
   const { state, dispatch, project } = useStore();
   const [draft, setDraft] = useState("");
   const bag = project ? state.talks[project.id] : null;
@@ -173,50 +120,55 @@ export function SessionPanel() {
     dispatch({ type: "sendTalk", text });
     setDraft("");
   };
+  const items = bag?.items || [];
   return (
-    <aside className="talk">
-      <div className="talk-head">
-        <h2>会话</h2>
-        <button type="button" disabled={!project} onClick={() => dispatch({ type: "newTalk" })}>新会话</button>
-      </div>
-      {!project && <p className="empty-note">先打开工程。会话绑在这个工程上。</p>}
-      {project && <>
-        <div className="talk-list">
-          {(bag?.items || []).map((item) => (
-            <button type="button" key={item.id} className={item.id === bag.activeId ? "on" : ""}
-              onClick={() => dispatch({ type: "selectTalk", id: item.id })}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                dispatch({ type: "selectTalk", id: item.id });
-                dispatch({ type: "context", context: { x: event.clientX, y: event.clientY, kind: "talk", id: item.id, name: item.title } });
-              }}>
+    <section className="session-row">
+      {!project && <p className="session-card note">先打开工程。会话绑在这个工程上。</p>}
+      {project && items.map((item) => {
+        const on = item.id === bag.activeId;
+        const last = item.messages[item.messages.length - 1];
+        return (
+          <article key={item.id} className={"session-card" + (on ? " on" : "")}
+            onClick={() => dispatch({ type: "selectTalk", id: item.id })}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              dispatch({ type: "selectTalk", id: item.id });
+              dispatch({ type: "context", context: { x: event.clientX, y: event.clientY, kind: "talk", id: item.id, name: item.title } });
+            }}>
+            <header>
+              <span className="badge-ico talk"><Icon name="message" /></span>
               <b>{item.title}</b>
-              <span aria-label="删除会话" onClick={(event) => { event.stopPropagation(); dispatch({ type: "closeTalk", id: item.id }); }}>×</span>
-            </button>
-          ))}
-        </div>
-        <div className="talk-log">
-          {current && current.messages.length === 0 && <p className="empty-note">写要做的事，例如：在 Main 上加一个 Delay。</p>}
-          {current?.messages.map((message) => (
-            <div key={message.id} className={"bubble " + message.role}>
-              <div>{message.text}</div>
-              {message.status && <div className="turn">{message.status}</div>}
-            </div>
-          ))}
-        </div>
-        <form className="talk-compose" onSubmit={(event) => { event.preventDefault(); send(); }}>
-          <textarea aria-label="会话内容" value={draft} disabled={!current || current.pending} placeholder={current ? "描述要做的事" : "先新建会话"} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} />
-          <button type="submit" disabled={!current || current.pending || !draft.trim()}>发送</button>
-        </form>
-      </>}
-    </aside>
+              <button type="button" aria-label="删除会话" onClick={(event) => { event.stopPropagation(); dispatch({ type: "closeTalk", id: item.id }); }}>×</button>
+            </header>
+            {on ? <>
+              <div className="talk-log">
+                {item.messages.length === 0 && <p className="empty-note">写要做的事，例如：在 Main 上加一个 Delay。</p>}
+                {item.messages.map((message) => (
+                  <div key={message.id} className={"bubble " + message.role}>
+                    <div>{message.text}</div>
+                    {message.status && <div className="turn">{message.status}</div>}
+                  </div>
+                ))}
+              </div>
+              <form className="talk-compose" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); send(); }}>
+                <textarea aria-label="会话内容" value={draft} disabled={item.pending} placeholder="描述要做的事" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} />
+                <button type="submit" disabled={item.pending || !draft.trim()}>发送</button>
+              </form>
+            </> : <p>{last?.text || "还没有内容"}</p>}
+          </article>
+        );
+      })}
+      {project && <button type="button" className="session-card add" onClick={() => dispatch({ type: "newTalk" })}>新建</button>}
+      <button type="button" className="session-fold" aria-label="收起会话" onClick={onClose}>×</button>
+    </section>
   );
 }
 
 export function Properties() {
   const { state, dispatch, project, agent } = useStore();
-  const selected = state.ui.selected;
+  const page = projectAgent(project, state.ui.pageId);
+  const selected = state.ui.selected?.kind === "experiment" && page ? { kind: "agent", id: page.id } : state.ui.selected;
   let body = null;
   if (project && selected?.kind === "project") {
     body = section("基本", <>
@@ -235,17 +187,6 @@ export function Properties() {
         <label className="field"><span>宽度</span><Editor field={{ type: "number", label: "宽度" }} value={item.w} onChange={(value, history) => dispatch({ type: "patchAgent", agentId: item.id, key: "w", value, history })} /></label>
         <label className="field"><span>高度</span><Editor field={{ type: "number", label: "高度" }} value={item.h} onChange={(value, history) => dispatch({ type: "patchAgent", agentId: item.id, key: "h", value, history })} /></label>
       </>)}
-    </>;
-  } else if (project && selected?.kind === "experiment") {
-    const item = project.experiments.find((exp) => exp.id === selected.id);
-    const spec = item && experimentSpec(item.type);
-    if (item) body = <>
-      {section("常规", <>
-        <label className="field"><span>名称</span><Editor field={{ type: "text", label: "名称" }} value={item.name} onChange={(value, history) => dispatch({ type: "rename", name: value, history, target: { kind: "experiment", id: item.id } })} /></label>
-        <label className="field"><span>类型</span><input aria-label="类型" value={spec.name} readOnly /></label>
-        <label className="field"><span>顶层</span><input aria-label="顶层" value="Main" readOnly /></label>
-      </>)}
-      {section("参数", spec.fields.map((field) => fieldRow(field, item.props[field.key], (value, history) => dispatch({ type: "patchExp", id: item.id, key: field.key, value, history }))))}
     </>;
   } else if (project && selected?.kind === "element") {
     const element = agent?.elements.find((item) => item.id === selected.id);
@@ -271,7 +212,85 @@ export function Properties() {
   } else if (project && selected?.kind === "link") {
     body = section("连线", <button type="button" onClick={() => dispatch({ type: "removeLink", id: selected.id })}>删除这条连线</button>);
   }
-  return <aside className="props"><h2>属性</h2>{body}</aside>;
+  const head = propHead(project, agent, selected);
+  return (
+    <div className="props">
+      <div className="cardhead">
+        <div><span className="badge-ico props"><Icon name="sliders" /></span><b>{head.title}</b>{head.sub && <i>{head.sub}</i>}</div>
+      </div>
+      <div className="propbody">{body}</div>
+    </div>
+  );
+}
+
+export function Runs() {
+  const { state, dispatch, project } = useStore();
+  if (!project) return <p className="empty-note">先打开工程。</p>;
+  const selected = state.ui.selected;
+  const pick = (item) => dispatch({ type: "select", selected: { kind: "experiment", id: item.id }, keepRun: true });
+  const page = projectAgent(project, state.ui.pageId);
+  const list = experimentsOn(project, page?.id || state.ui.pageId);
+  const playing = state.ui.play;
+  const paused = state.ui.mode === "pause";
+  const running = playing || paused;
+  const chosen = list.find((item) => selected?.kind === "experiment" && item.id === selected.id)
+    || list.find((item) => item.type === "simulation")
+    || list[0];
+  return (
+    <div className="runs">
+      {list.length > 0 && <div className="runrow">
+        <button type="button" className="runbtn" onClick={() => dispatch({ type: playing ? "pause" : paused ? "resume" : "run", experimentId: chosen?.id })}>
+          {playing ? "暂停" : paused ? "继续" : "开始"}
+        </button>
+        <button type="button" disabled={!running} onClick={() => dispatch({ type: "stop" })}>停止</button>
+      </div>}
+      {list.length === 0 && <p className="empty-note">这个页面还没有仿真。</p>}
+      {list.map((item) => {
+        const spec = experimentSpec(item.type);
+        const on = selected?.kind === "experiment" && selected.id === item.id;
+        return (
+          <div key={item.id}>
+            <button type="button" className={"node" + (on ? " on" : "")} aria-current={on ? "true" : undefined}
+              onClick={() => pick(item)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                pick(item);
+                dispatch({ type: "context", context: { x: event.clientX, y: event.clientY, kind: "experiment", id: item.id, projectId: project.id } });
+              }}>
+              <span className="badge-ico sim"><Icon name="play" /></span>{item.name}<i className="meta">{spec.name}</i>
+            </button>
+            {on && <ExperimentBody item={item} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ExperimentBody({ item }) {
+  const { dispatch } = useStore();
+  const spec = experimentSpec(item.type);
+  return (
+    <div className="exp-body">
+      <label className="field"><span>名称</span><Editor field={{ type: "text", label: "名称" }} value={item.name} onChange={(value, history) => dispatch({ type: "rename", name: value, history, target: { kind: "experiment", id: item.id } })} /></label>
+      {spec.fields.map((field) => fieldRow(field, item.props[field.key], (value, history) => dispatch({ type: "patchExp", id: item.id, key: field.key, value, history })))}
+    </div>
+  );
+}
+
+function propHead(project, agent, selected) {
+  if (project && selected?.kind === "project") return { title: project.name, sub: "工程" };
+  if (project && selected?.kind === "agent") {
+    const item = projectAgent(project, selected.id);
+    return { title: item?.name || "属性", sub: "页面" };
+  }
+  if (project && selected?.kind === "element") {
+    const element = agent?.elements.find((item) => item.id === selected.id);
+    return { title: element?.name || "属性", sub: element?.type || "" };
+  }
+  if (selected?.kind === "link") return { title: "连线", sub: "" };
+  return { title: "属性", sub: "" };
 }
 
 function section(title, children) {
@@ -283,12 +302,13 @@ function fieldRow(field, value, onChange) {
 }
 
 export function Problems() {
-  const { state, project, agent, experiment } = useStore();
+  const { state, dispatch, project, agent, experiment } = useStore();
   if (!state.ui.panels.problems) return null;
   const list = state.ui.showErrors ? collectProblems(project, experiment ? projectAgent(project, "main") : agent, experiment?.type === "rl" ? experiment : null) : [];
   if (!list.length) return null;
   return (
     <div className="problems">
+      <div className="problem-head"><b>问题</b><button type="button" className="x" aria-label="关闭问题" onClick={() => dispatch({ type: "clearProblems" })}>×</button></div>
       <table><tbody>
         <tr><th>问题</th><th>位置</th></tr>
         {list.map((item, index) => <tr key={index}><td>{item.text}</td><td>{item.where}</td></tr>)}
@@ -317,7 +337,7 @@ function Dialogs() {
   const dialog = state.ui.dialog;
   const close = () => dispatch({ type: "dialog", dialog: null });
   if (dialog.kind === "project") return <NameUnit title="新建工程" onClose={close} onSubmit={(name, unit) => dispatch({ type: "createProject", name, unit })} />;
-  if (dialog.kind === "agent") return <NameUnit title="新建智能体" unit={false} onClose={close} onSubmit={(name) => dispatch({ type: "createAgent", name })} />;
+  if (dialog.kind === "agent") return <NameUnit title="新建页面" unit={false} onClose={close} onSubmit={(name) => dispatch({ type: "createAgent", name })} />;
   if (dialog.kind === "experiment") return <ExperimentDialog onClose={close} />;
   if (dialog.kind === "rename") return <NameUnit title="重命名" unit={false} initial={dialog.name} onClose={close} onSubmit={(name) => dispatch({ type: "rename", name, target: dialog.target })} />;
   if (dialog.kind === "renameTalk") return <NameUnit title="重命名会话" unit={false} initial={dialog.name} onClose={close} onSubmit={(name) => dispatch({ type: "renameTalk", id: dialog.id, name })} />;
@@ -422,8 +442,8 @@ function Help() {
     <div className="modal" onMouseDown={() => dispatch({ type: "help", value: false })}>
       <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
         <h3>快捷键</h3>
-        <p>工程上右键可以新建智能体、实验、运行和删除。智能体行上的 ＋ 往画布加一个模块。</p>
-        <p>Main 是画布。Simulation 是默认实验，右键运行。</p>
+        <p>标题栏的 ＋ 用来新建页面。页面行上悬停出 ＋，用来往这一页加模块。属性和仿真一次只开一个。有仿真之后才出现开始和停止。</p>
+        <p>Main 是新建工程时的第一页。一个页面可以有多个仿真实验。会话挂在工程上。左侧、右侧和地图贴在边缘上收起或展开，宽度仍可拖。</p>
         <p>从一个端口拖到另一个端口来连线。同一对模块可以有多根线，点中后 Delete 或右键删除。</p>
         <p>Delete 删除，⌘Z 撤销，⌘⇧Z 重做，⌘C / ⌘V 复制粘贴，⌘S 保存。</p>
         <div className="row"><button type="button" onClick={() => dispatch({ type: "help", value: false })}>关闭</button></div>
@@ -453,9 +473,15 @@ function ContextMenu() {
   const menu = state.ui.context;
   const project = projectFrom(state, menu);
   const ask = (dialog) => dispatch({ type: "dialog", dialog });
-  const runAt = (pageId, kind) => {
-    dispatch({ type: "focusProject", id: project.id, pageId, selected: { kind, id: pageId } });
-    dispatch({ type: "run" });
+  const runPage = (pageId) => {
+    const list = experimentsOn(project, pageId);
+    const exp = list.find((item) => item.type === "simulation") || list[0];
+    dispatch({ type: "focusProject", id: project.id, pageId, selected: { kind: "agent", id: pageId } });
+    if (!exp) {
+      dispatch({ type: "notice", text: "先在这个页面建一个仿真。" });
+      return;
+    }
+    dispatch({ type: "run", experimentId: exp.id });
   };
   const buttons = [];
   const push = (label, run) => buttons.push(<button type="button" key={label} onClick={run}>{label}</button>);
@@ -465,30 +491,30 @@ function ContextMenu() {
   }
   if (menu.kind === "tree") push("新建工程", () => ask({ kind: "project" }));
   if (menu.kind === "project" && project) {
-    const exp = project.experiments.find((item) => item.type === "simulation") || project.experiments[0];
+    const exp = experimentsOn(project, "main").find((item) => item.type === "simulation") || experimentsOn(project, "main")[0];
     push("打开", () => dispatch({ type: "focusProject", id: project.id, pageId: "main", selected: { kind: "agent", id: "main" } }));
-    push("新建智能体", () => ask({ kind: "agent" }));
+    push("新建页面", () => ask({ kind: "agent" }));
     push("新建实验", () => ask({ kind: "experiment" }));
     push("添加模块", () => ask({ kind: "module", agentId: "main" }));
-    if (exp) push("运行", () => runAt(exp.id, "experiment"));
+    if (exp) push("运行", () => dispatch({ type: "run", experimentId: exp.id }));
     push("重命名", () => ask({ kind: "rename", name: project.name, target: { kind: "project", id: project.id } }));
     push("保存", () => dispatch({ type: "save" }));
     push("关闭", () => dispatch({ type: "closeProject", id: project.id }));
     push("删除", () => dispatch({ type: "deleteProject", id: project.id }));
   }
-  if (menu.kind === "agents") push("新建智能体", () => ask({ kind: "agent" }));
+  if (menu.kind === "agents") push("新建页面", () => ask({ kind: "agent" }));
   if (menu.kind === "experiments") push("新建实验", () => ask({ kind: "experiment" }));
   if (menu.kind === "agent" && project) {
     push("打开", () => dispatch({ type: "focusProject", id: project.id, pageId: menu.id, selected: { kind: "agent", id: menu.id } }));
     push("添加模块", () => ask({ kind: "module", agentId: menu.id }));
-    push("运行", () => runAt(menu.id, "agent"));
+    push("运行", () => runPage(menu.id));
     push("重命名", () => ask({ kind: "rename", name: itemName(project, menu), target: { kind: "agent", id: menu.id } }));
     push("粘贴", () => dispatch({ type: "paste" }));
     push("删除", () => dispatch({ type: "remove" }));
   }
   if (menu.kind === "experiment" && project) {
-    push("打开", () => dispatch({ type: "focusProject", id: project.id, pageId: menu.id, selected: { kind: "experiment", id: menu.id } }));
-    push("运行", () => runAt(menu.id, "experiment"));
+    push("打开", () => dispatch({ type: "select", selected: { kind: "experiment", id: menu.id }, keepRun: true }));
+    push("运行", () => dispatch({ type: "run", experimentId: menu.id }));
     push("重命名", () => ask({ kind: "rename", name: itemName(project, menu), target: { kind: "experiment", id: menu.id } }));
     push("删除", () => dispatch({ type: "remove" }));
   }
@@ -500,7 +526,7 @@ function ContextMenu() {
   if (menu.kind === "canvas" && project) {
     push("添加模块", () => ask({ kind: "module", agentId: menu.id }));
     push("粘贴", () => dispatch({ type: "paste" }));
-    push("运行", () => runAt(menu.id, "agent"));
+    push("运行", () => runPage(menu.id));
   }
   if (menu.kind === "link") push("删除连线", () => dispatch({ type: "remove" }));
   return (

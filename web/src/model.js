@@ -14,7 +14,7 @@ export function blankProject(name, unit = "分钟") {
     name,
     unit,
     agents: [{ id: "main", name: "Main", space: "连续", w: 800, h: 600, elements: [], links: [] }],
-    experiments: [{ id: "sim", name: "Simulation", type: "simulation", props: defaultProps(experimentSpec("simulation").fields) }]
+    experiments: [{ id: "sim", name: "Simulation", type: "simulation", page: "main", props: defaultProps(experimentSpec("simulation").fields) }]
   };
 }
 
@@ -24,6 +24,11 @@ export function projectAgent(project, id) {
 
 export function projectExperiment(project, id) {
   return project?.experiments.find((item) => item.id === id) || null;
+}
+
+export function experimentsOn(project, pageId) {
+  const page = projectAgent(project, pageId)?.id || "main";
+  return (project?.experiments || []).filter((item) => (item.page || "main") === page);
 }
 
 function uniqueName(owner, base) {
@@ -42,11 +47,12 @@ export function addAgent(project, name) {
   return { project: next, id };
 }
 
-export function addExperiment(project, name, type) {
+export function addExperiment(project, name, type, pageId) {
   const next = clone(project);
   const spec = experimentSpec(type);
   const id = uid("e");
-  next.experiments.push({ id, name: name.trim() || spec.name, type: spec.type, props: defaultProps(spec.fields) });
+  const page = projectAgent(next, pageId)?.id || "main";
+  next.experiments.push({ id, name: name.trim() || spec.name, type: spec.type, page, props: defaultProps(spec.fields) });
   return { project: next, id };
 }
 
@@ -135,11 +141,15 @@ export function removeAgent(project, agentId) {
   if (project.agents.length <= 1) return project;
   const next = clone(project);
   next.agents = next.agents.filter((agent) => agent.id !== agentId);
+  next.experiments = next.experiments.filter((item) => (item.page || "main") !== agentId);
+  if (!next.experiments.some((item) => item.type === "simulation")) return project;
   return next;
 }
 
 export function removeExperiment(project, experimentId) {
-  if (project.experiments.length <= 1) return project;
+  const exp = project.experiments.find((item) => item.id === experimentId);
+  const sims = project.experiments.filter((item) => item.type === "simulation");
+  if (!exp || (exp.type === "simulation" && sims.length <= 1)) return project;
   const next = clone(project);
   next.experiments = next.experiments.filter((item) => item.id !== experimentId);
   return next;

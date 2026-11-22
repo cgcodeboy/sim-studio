@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
 import { deleteProject, deleteSession, getRecord, listProjects, listSessions, createSession, pauseRecord, putProject, readProject, readSession, renameSession, resumeRecord, setSpeed, startRecord, stopRecord, turnDialogue } from "./api.js";
 import { applyTask, outline } from "./dialogue.js";
+import { advanceExperiment, advanceFlow, flowMovers, initialRuntime } from "./sim.js";
 import { cardTalk, talkFromSession } from "./talks.js";
-import { blankProject, clone, collectProblems, pasteElements, projectAgent, projectExperiment, readSaved, SAVE_KEY, uid, addAgent, addElement, addExperiment, addLink, addPin, moveElement, removeAgent, removeElements, removeExperiment, removeLink, renameElement, setElementProp } from "./model.js";
+import { blankProject, clone, collectProblems, pasteElements, projectAgent, projectExperiment, experimentsOn, readSaved, SAVE_KEY, uid, addAgent, addElement, addExperiment, addLink, addPin, moveElement, removeAgent, removeElements, removeExperiment, removeLink, renameElement, setElementProp } from "./model.js";
 
 const Store = createContext(null);
 export function useStore() { return useContext(Store); }
@@ -335,8 +336,9 @@ function reducer(state, action) {
     case "createExperiment": {
       const project = current(state);
       if (!project) return state;
-      const { project: next, id } = addExperiment(project, action.name, action.expType);
-      return commit(state, next, { dialog: null, tabs: [...state.ui.tabs, id], pageId: id, selected: { kind: "experiment", id }, mode: "edit", play: false });
+      const page = projectAgent(project, state.ui.pageId)?.id || "main";
+      const { project: next, id } = addExperiment(project, action.name, action.expType, page);
+      return commit(state, next, { dialog: null, selected: { kind: "experiment", id } });
     }
     case "rename": {
       const project = current(state);
@@ -396,7 +398,7 @@ function reducer(state, action) {
       const project = current(state);
       const agentId = action.agentId && projectAgent(project, action.agentId) ? action.agentId : state.ui.pageId;
       const agent = projectAgent(project, agentId);
-      if (!agent) return { ...state, ui: { ...state.ui, notice: project ? "先打开一个智能体。" : "先新建工程。", dialog: null } };
+      if (!agent) return { ...state, ui: { ...state.ui, notice: project ? "先打开一个页面。" : "先新建工程。", dialog: null } };
       const { project: next, id } = addElement(project, agent.id, action.elementType, action.x, action.y);
       const tabs = state.ui.tabs.includes(agent.id) ? state.ui.tabs : [...state.ui.tabs, agent.id];
       return commit(state, next, { selected: { kind: "element", id }, pageId: agent.id, tabs, linking: null, linkCursor: null, dialog: null, context: null });
@@ -443,13 +445,14 @@ function reducer(state, action) {
       if (sel.kind === "link") return commit(state, removeLink(project, state.ui.pageId, sel.id), { selected: null, context: null });
       if (sel.kind === "element") return commit(state, removeElements(project, state.ui.pageId, [sel.id]), { selected: { kind: "agent", id: state.ui.pageId }, context: null });
       if (sel.kind === "agent") {
-        if (project.agents.length <= 1) return { ...state, ui: { ...state.ui, notice: "工程里要留一个智能体。", context: null } };
+        if (project.agents.length <= 1) return { ...state, ui: { ...state.ui, notice: "工程里要留一个页面。", context: null } };
         const next = removeAgent(project, sel.id);
+        if (next === project) return { ...state, ui: { ...state.ui, notice: "这一页上有工程里仅剩的仿真，先在别的页面建一个。", context: null } };
         const pageId = state.ui.pageId === sel.id ? next.agents[0].id : state.ui.pageId;
         return commit(state, next, { pageId, tabs: state.ui.tabs.filter((id) => id !== sel.id), selected: { kind: "agent", id: pageId }, context: null });
       }
       if (sel.kind === "experiment") {
-        if (project.experiments.length <= 1) return { ...state, ui: { ...state.ui, notice: "工程里要留一个实验。", context: null } };
+        if (removeExperiment(project, sel.id) === project) return { ...state, ui: { ...state.ui, notice: "工程里要留一个仿真。", context: null } };
         const next = removeExperiment(project, sel.id);
         const pageId = state.ui.pageId === sel.id ? "main" : state.ui.pageId;
         return commit(state, next, { pageId, tabs: state.ui.tabs.filter((id) => id !== sel.id), selected: { kind: pageKind(next, pageId), id: pageId }, context: null });
@@ -513,7 +516,13 @@ function reducer(state, action) {
     case "stop":
       return state;
     case "problems":
-      return { ...state, ui: { ...state.ui, showErrors: true, panels: { ...state.ui.panels, problems: true }, mode: "edit", play: false, notice: "" } };
+      return { ...state, ui: { ...state.ui, showErrors: true, panels: { ...state.ui.panels, problems: true }, mode: "edit", play: false, notice: "有没接上的口，运行没有开始。" } };
+    case "localHold":
+      return { ...state, ui: { ...state.ui, play: action.play, mode: action.mode } };
+    case "localStop":
+      return { ...state, runtime: null, ui: { ...state.ui, play: false, mode: "edit" } };
+    case "clearProblems":
+      return { ...state, ui: { ...state.ui, showErrors: false } };
     default:
       return state;
   }
@@ -530,6 +539,21 @@ function speedName(value) {
   if (value === 10) return "x10";
   if (value === 0) return "asap";
   return "x1";
+}
+
+function localSample(project, runtime, speed) {
+  const experiment = projectExperiment(project, runtime.experimentId);
+  const agent = projectAgent(project, experiment?.page || "main");
+  const dt = speed === 0 ? 4 : speed === 10 ? 2 : 0.2;
+  if (experiment && experiment.type !== "simulation") return { ...advanceExperiment(experiment, runtime, dt), experimentId: runtime.experimentId };
+  if (!agent) return runtime;
+  const next = advanceFlow(agent, runtime, dt);
+  return { ...next, experimentId: runtime.experimentId, movers: flowMovers(agent, next) };
+}
+
+function beginLocal(rawDispatch, experiment) {
+  const sample = experiment?.type && experiment.type !== "simulation" ? initialRuntime("exp") : initialRuntime("flow");
+  rawDispatch({ type: "started", result: { recordId: "local", status: "running", sample: { ...sample, experimentId: experiment.id, movers: [] } } });
 }
 
 function explain(error) {
@@ -599,14 +623,20 @@ export function StoreProvider({ children }) {
         rawDispatch({ type: "notice", text: "先新建工程。" });
         return;
       }
-      const exp = projectExperiment(project, snapshot.ui.pageId);
-      const agent = projectAgent(project, "main");
-      const problems = collectProblems(project, agent, exp?.type === "rl" ? exp : null);
+      const page = projectAgent(project, snapshot.ui.pageId)?.id || "main";
+      const onPage = experimentsOn(project, page);
+      const picked = action.experimentId ? projectExperiment(project, action.experimentId) : onPage.find((item) => item.type === "simulation") || onPage[0];
+      if (!picked) {
+        rawDispatch({ type: "notice", text: "先在这个页面建一个仿真。" });
+        return;
+      }
+      const agent = projectAgent(project, picked.page || page) || projectAgent(project, "main");
+      const problems = collectProblems(project, agent, picked?.type === "rl" ? picked : null);
       if (problems.length) {
         rawDispatch({ type: "problems" });
         return;
       }
-      const experimentId = exp?.id || "sim";
+      const experimentId = picked.id;
       putProject(project.revision || 0, project).then(
         (stored) => {
           rawDispatch({ type: "stored", project: stored, openId: stored.id, notice: "" });
@@ -614,12 +644,22 @@ export function StoreProvider({ children }) {
         }
       ).then(
         (result) => result && rawDispatch({ type: "started", result }),
-        (error) => rawDispatch(error.project ? { type: "conflict", project: error.project } : { type: "notice", text: explain(error) })
+        (error) => {
+          if (error.project) rawDispatch({ type: "conflict", project: error.project });
+          else beginLocal(rawDispatch, picked);
+        }
       );
       return;
     }
     if (action.type === "pause" || action.type === "resume" || action.type === "stop" || action.type === "speed") {
       const snapshot = stateRef.current;
+      if (snapshot.runtime?.recordId === "local") {
+        if (action.type === "speed") rawDispatch(action);
+        if (action.type === "pause") rawDispatch({ type: "localHold", play: false, mode: "pause" });
+        if (action.type === "resume") rawDispatch({ type: "localHold", play: true, mode: "run" });
+        if (action.type === "stop") rawDispatch({ type: "localStop" });
+        return;
+      }
       if (action.type === "speed") rawDispatch(action);
       const recordId = snapshot.runtime?.recordId;
       if (!recordId) return;
@@ -733,6 +773,16 @@ export function StoreProvider({ children }) {
   useEffect(() => {
     if (!state.ui.play || !state.runtime?.recordId) return undefined;
     const recordId = state.runtime.recordId;
+    if (recordId === "local") {
+      const id = setInterval(() => {
+        const snap = stateRef.current;
+        const project = snap.session[snap.openId];
+        if (!snap.ui.play || !project || snap.runtime?.recordId !== "local") return;
+        const sample = localSample(project, snap.runtime, snap.ui.speed);
+        rawDispatch({ type: "sample", result: { recordId: "local", status: "running", sample } });
+      }, 200);
+      return () => clearInterval(id);
+    }
     const id = setInterval(() => {
       getRecord(recordId).then(
         (result) => rawDispatch({ type: "sample", result }),

@@ -81,6 +81,26 @@ export function flowSnapshot(agent, time) {
   return { arrived, exited, queued, overflow, inProcess, counts, delay, rate };
 }
 
+function centerOf(element) {
+  return { x: (element.x || 0) + (element.w || 140) / 2, y: (element.y || 0) + (element.h || 72) / 2 };
+}
+
+export function flowMovers(agent, runtime) {
+  const chain = mainChain(agent);
+  if (!chain.length) return [];
+  const busy = Math.ceil((runtime.inProcess || 0) + Math.min(3, runtime.queued || 0));
+  const count = Math.max(1, Math.min(5, busy || 1));
+  return Array.from({ length: count }, (_, index) => {
+    const p = ((runtime.tokenPhase || 0) * 0.3 + index / count) % 1;
+    const span = Math.max(1, chain.length - 1);
+    const at = p * span;
+    const from = centerOf(chain[Math.floor(at)]);
+    const to = centerOf(chain[Math.min(chain.length - 1, Math.ceil(at))]);
+    const t = at - Math.floor(at);
+    return { id: "件" + (index + 1), x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t, z: 18 + Math.sin(p * Math.PI) * 26 };
+  });
+}
+
 export function advanceFlow(agent, runtime, dt) {
   const time = runtime.time + dt;
   const snap = flowSnapshot(agent, time);

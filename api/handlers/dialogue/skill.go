@@ -124,7 +124,7 @@ func skillUser(in Input) string {
 	if page == "" {
 		page = "Main"
 	}
-	text.WriteString("当前打开的是 " + page + "。没有点名智能体时，agent 填这个名字。点名了别的智能体，agent 填那个名字。\n")
+	text.WriteString("当前打开的是 " + page + "。没有点名页面时，agent 填这个名字。点名了别的页面，agent 填那个名字。\n")
 	for _, item := range in.Agents {
 		text.WriteString(item.Name + "：")
 		if len(item.Elements) == 0 {

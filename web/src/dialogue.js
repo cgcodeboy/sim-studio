@@ -31,7 +31,7 @@ function applyOne(project, task, pageId) {
   if (!project || !task || task.status !== "已写入") return { project, changed: false };
   if (task.intent === "run" || task.intent === "pause" || task.intent === "stop") return { project, changed: false };
   const agent = findAgent(project, task.agent) || projectAgent(project, pageId) || project.agents[0];
-  if (!agent) return { project, changed: false, failed: "没有找到智能体" + (task.agent ? " " + task.agent : "") + "。" };
+  if (!agent) return { project, changed: false, failed: "没有找到页面" + (task.agent ? " " + task.agent : "") + "。" };
   if (task.intent === "place") return place(project, agent, task);
   if (task.intent === "layout") return arrange(project, agent, task);
   if (task.intent === "tie") return tieLoose(project, agent);
@@ -90,8 +90,8 @@ function placeSlots(agent, gap) {
     id: element.id,
     x: pos.get(element.id).x,
     y: pos.get(element.id).y,
-    w: element.w || 104,
-    h: element.h || 52
+    w: element.w || 156,
+    h: element.h || 84
   }));
 }
 
@@ -107,8 +107,8 @@ function sideGroups(agent, onSpine, links, fallback) {
 }
 
 function modulePitch(agent, gap) {
-  const width = Math.max(...agent.elements.map((element) => element.w || 104));
-  const height = Math.max(...agent.elements.map((element) => element.h || 52));
+  const width = Math.max(...agent.elements.map((element) => element.w || 156));
+  const height = Math.max(...agent.elements.map((element) => element.h || 84));
   return { x: width + gap, y: height + gap };
 }
 
