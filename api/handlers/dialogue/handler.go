@@ -8,15 +8,17 @@ import (
 	"strings"
 
 	"github.com/cgcodeboy/sim-studio/api/handlers/respond"
+	convdom "github.com/cgcodeboy/sim-studio/internal/pkgs/conversation/domain"
 	librarydom "github.com/cgcodeboy/sim-studio/internal/pkgs/library/domain"
 )
 
 type Handler struct {
 	catalog librarydom.Service
+	memory  convdom.Service
 }
 
-func New(catalog librarydom.Service) *Handler {
-	return &Handler{catalog: catalog}
+func New(catalog librarydom.Service, memory convdom.Service) *Handler {
+	return &Handler{catalog: catalog, memory: memory}
 }
 
 func (h *Handler) Turn(w http.ResponseWriter, r *http.Request) {
@@ -32,11 +34,15 @@ func (h *Handler) decide(ctx context.Context, in Input) Task {
 	if key == "" {
 		return clarify("对话模型没有配置，工程没有改。")
 	}
+	in.Memory = h.recall(ctx, in)
 	task, ok := askSkills(ctx, key, h.names(ctx), in)
 	if !ok {
-		return clarify("模型没有给出可执行的结果，工程没有改。")
+		task = clarify("模型没有给出可执行的结果，工程没有改。")
+	} else {
+		task = withPage(task, in)
 	}
-	return withPage(task, in)
+	h.remember(ctx, in, task)
+	return task
 }
 
 func withPage(task Task, in Input) Task {

@@ -557,7 +557,7 @@ export function StoreProvider({ children }) {
       if (!bag || !project || !text || bag.items.some((item) => item.pending)) return;
       const talkId = bag.activeId;
       rawDispatch({ type: "talkUser", text, talkId });
-      turnDialogue(outline(project, snapshot.ui.pageId, text)).then(
+      turnDialogue(outline(project, snapshot.ui.pageId, text, talkId)).then(
         (task) => {
           const live = stateRef.current;
           const applied = applyTask(live.session[live.openId] || project, task, live.ui.pageId);

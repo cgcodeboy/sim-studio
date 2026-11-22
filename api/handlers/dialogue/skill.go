@@ -131,6 +131,9 @@ func skillUser(in Input) string {
 		}
 		text.WriteString("。\n")
 	}
+	if in.Memory != "" {
+		text.WriteString(in.Memory)
+	}
 	text.WriteString(in.Text)
 	return text.String()
 }

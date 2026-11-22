@@ -9,7 +9,7 @@ import (
 func TestDecideWithoutModelDoesNotUseRules(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	text := "在 Main 上建一条线。每道工序各放一个 Queue 和一个 Delay：来料、清洗、加工。然后运行。"
-	task := New(nil).decide(context.Background(), Input{Text: text, Page: "Main"})
+	task := New(nil, nil).decide(context.Background(), Input{Text: text, Page: "Main"})
 	if task.Status != "未写入" || task.Intent != "clarify" || len(task.Types) != 0 {
 		t.Fatalf("%+v", task)
 	}

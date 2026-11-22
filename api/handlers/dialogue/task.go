@@ -34,9 +34,12 @@ type agent struct {
 
 // Input 是这一轮的原话和当前工程的轮廓。
 type Input struct {
-	Text   string  `json:"text"`
-	Page   string  `json:"page"`
-	Agents []agent `json:"agents"`
+	Text    string  `json:"text"`
+	Page    string  `json:"page"`
+	Project string  `json:"project,omitempty"`
+	Session string  `json:"session,omitempty"`
+	Agents  []agent `json:"agents"`
+	Memory  string  `json:"-"`
 }
 
 func finish(task Task) Task {

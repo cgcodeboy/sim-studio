@@ -1,11 +1,13 @@
 import { findType } from "./catalog.js";
 import { addElement, addLink, projectAgent, removeElements, setElementProp } from "./model.js";
 
-export function outline(project, pageId, text) {
+export function outline(project, pageId, text, sessionId) {
   const page = projectAgent(project, pageId);
   return {
     text,
     page: page?.name || "Main",
+    project: project?.id || "",
+    session: sessionId || "",
     agents: (project?.agents || []).map((agent) => ({
       name: agent.name,
       elements: agent.elements.map((item) => ({ name: item.name, type: item.type }))

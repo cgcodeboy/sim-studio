@@ -9,6 +9,9 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 
 	behaviordom "github.com/cgcodeboy/sim-studio/internal/pkgs/behavior/domain"
+	convdom "github.com/cgcodeboy/sim-studio/internal/pkgs/conversation/domain"
+	convrepo "github.com/cgcodeboy/sim-studio/internal/pkgs/conversation/repo"
+	convsvc "github.com/cgcodeboy/sim-studio/internal/pkgs/conversation/service"
 	dynamicsdom "github.com/cgcodeboy/sim-studio/internal/pkgs/dynamics/domain"
 	experimentdom "github.com/cgcodeboy/sim-studio/internal/pkgs/experiment/domain"
 	fluiddom "github.com/cgcodeboy/sim-studio/internal/pkgs/fluid/domain"
@@ -30,34 +33,36 @@ import (
 
 // App 把领域服务交给 handler。handler 组合它们，领域不组合彼此。
 type App struct {
-	Model      modeldom.Service
-	Record     recorddom.Service
-	Library    librarydom.Service
-	Process    processdom.Opener
-	Handling   handlingdom.Opener
-	Pedestrian pedestriandom.Opener
-	Road       roaddom.Opener
-	Rail       raildom.Opener
-	Fluid      fluiddom.Opener
-	Dynamics   dynamicsdom.Opener
-	Behavior   behaviordom.Opener
-	Experiment experimentdom.Opener
+	Model        modeldom.Service
+	Record       recorddom.Service
+	Library      librarydom.Service
+	Conversation convdom.Service
+	Process      processdom.Opener
+	Handling     handlingdom.Opener
+	Pedestrian   pedestriandom.Opener
+	Road         roaddom.Opener
+	Rail         raildom.Opener
+	Fluid        fluiddom.Opener
+	Dynamics     dynamicsdom.Opener
+	Behavior     behaviordom.Opener
+	Experiment   experimentdom.Opener
 }
 
 // Wire 装上不需要数据库的领域。测试和 Open 共用这一份。
 func Wire() *App {
 	process, handling, pedestrian, road, rail, fluid, dynamics, behavior, experiment := solvers()
 	return &App{
-		Library:    librarysvc.New(libraryrepo.New()),
-		Process:    process,
-		Handling:   handling,
-		Pedestrian: pedestrian,
-		Road:       road,
-		Rail:       rail,
-		Fluid:      fluid,
-		Dynamics:   dynamics,
-		Behavior:   behavior,
-		Experiment: experiment,
+		Library:      librarysvc.New(libraryrepo.New()),
+		Conversation: convsvc.New(convrepo.New()),
+		Process:      process,
+		Handling:     handling,
+		Pedestrian:   pedestrian,
+		Road:         road,
+		Rail:         rail,
+		Fluid:        fluid,
+		Dynamics:     dynamics,
+		Behavior:     behavior,
+		Experiment:   experiment,
 	}
 }
 
@@ -87,5 +92,6 @@ func Open(ctx context.Context, uri string) (*App, error) {
 	application := Wire()
 	application.Model = documents
 	application.Record = runner
+	application.Conversation = convsvc.New(convrepo.NewMongo(db))
 	return application, nil
 }

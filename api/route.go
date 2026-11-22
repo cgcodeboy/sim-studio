@@ -11,7 +11,7 @@ import (
 
 func (s *server) routes() http.Handler {
 	catalog := library.New(s.app.Library)
-	turns := dialogue.New(s.app.Library)
+	turns := dialogue.New(s.app.Library, s.app.Conversation)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/library", catalog.List)
