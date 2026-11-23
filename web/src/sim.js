@@ -1,4 +1,8 @@
 import { findType, isEntry, isExit } from "./catalog.js";
+import { METER } from "./meshkit.js";
+
+const RIDE = 0.96;
+const LOGIC = new Set(["Seize", "Release", "Resource Pool"]);
 
 function minutesOf(text, fallback) {
   const match = String(text ?? "").match(/[\d.]+/);
@@ -85,8 +89,17 @@ function centerOf(element) {
   return { x: (element.x || 0) + (element.w || 140) / 2, y: (element.y || 0) + (element.h || 72) / 2 };
 }
 
+function worldOf(element) {
+  const pose = element.pose;
+  if (pose && Number.isFinite(pose.x) && Number.isFinite(pose.z)) {
+    return { x: pose.x, y: (Number.isFinite(pose.y) ? pose.y : 0) + RIDE, z: pose.z };
+  }
+  const center = centerOf(element);
+  return { x: center.x * METER, y: RIDE, z: center.y * METER };
+}
+
 export function flowMovers(agent, runtime) {
-  const chain = mainChain(agent);
+  const chain = mainChain(agent).filter((element) => !LOGIC.has(element.type));
   if (!chain.length) return [];
   const busy = Math.ceil((runtime.inProcess || 0) + Math.min(3, runtime.queued || 0));
   const count = Math.max(1, Math.min(5, busy || 1));
@@ -94,10 +107,15 @@ export function flowMovers(agent, runtime) {
     const p = ((runtime.tokenPhase || 0) * 0.3 + index / count) % 1;
     const span = Math.max(1, chain.length - 1);
     const at = p * span;
-    const from = centerOf(chain[Math.floor(at)]);
-    const to = centerOf(chain[Math.min(chain.length - 1, Math.ceil(at))]);
+    const from = worldOf(chain[Math.floor(at)]);
+    const to = worldOf(chain[Math.min(chain.length - 1, Math.ceil(at))]);
     const t = at - Math.floor(at);
-    return { id: "件" + (index + 1), x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t, z: 18 + Math.sin(p * Math.PI) * 26 };
+    return {
+      id: "件" + (index + 1),
+      x: from.x + (to.x - from.x) * t,
+      y: from.y + (to.y - from.y) * t,
+      z: from.z + (to.z - from.z) * t
+    };
   });
 }
 

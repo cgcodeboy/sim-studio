@@ -36,7 +36,11 @@ func executeAll(ctx context.Context, call skillCall, planned plan) (Task, bool) 
 			if !flush() {
 				return Task{}, false
 			}
-			actions = append(actions, finish(Task{Intent: "layout", Agent: call.in.Page, Gap: layoutGap(planned.Gap)}))
+			task, ok := layPage(ctx, call, planned, placedTypes(actions))
+			if !ok {
+				return Task{}, false
+			}
+			actions = append(actions, task)
 			continue
 		}
 		batch = append(batch, step)

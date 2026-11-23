@@ -46,8 +46,10 @@ type Agent struct {
 
 type Pose struct {
 	X   float64 `json:"x" bson:"x"`
+	Y   float64 `json:"y,omitempty" bson:"y,omitempty"`
 	Z   float64 `json:"z" bson:"z"`
 	Yaw float64 `json:"yaw" bson:"yaw"`
+	Len float64 `json:"len,omitempty" bson:"len,omitempty"`
 }
 
 type Element struct {

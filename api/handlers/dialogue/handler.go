@@ -3,6 +3,7 @@ package dialogue
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -35,6 +36,16 @@ func (h *Handler) decide(ctx context.Context, in Input) Task {
 		return clarify("对话模型没有配置，工程没有改。")
 	}
 	in.Memory = h.recall(ctx, in)
+	if wantsLayout(in.Text) {
+		log.Printf("dialogue: layout request %s", clip(in.Text))
+		in.Memory = ""
+		task, ok := layoutFromSkill(ctx, skillCall{key: key, known: h.names(ctx), in: in}, 8, nil)
+		if !ok {
+			task = refuseTask("布局专员没有给出互不重叠的平面位置和三维姿态。")
+		}
+		h.remember(ctx, in, task)
+		return task
+	}
 	task, ok := askSkills(ctx, key, h.names(ctx), in)
 	if !ok {
 		task = clarify("模型没有给出可执行的结果，工程没有改。")

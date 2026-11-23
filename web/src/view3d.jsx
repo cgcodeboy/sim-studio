@@ -4,7 +4,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import Canvas from "./canvas.jsx";
 import { bindEdit, attachPick } from "./edit3d.js";
-import { METER, spot } from "./meshkit.js";
+import { spot, stampOf } from "./meshkit.js";
 import { buildModel, carton, release, tickModels } from "./models3d.js";
 import { useStore } from "./store.jsx";
 
@@ -85,6 +85,12 @@ function syncWorld(scene, live, bag) {
   });
   elements.forEach((element) => {
     let mesh = bag.stations.get(element.id);
+    if (mesh && mesh.userData.stamp !== stampOf(element)) {
+      scene.remove(mesh);
+      release(mesh);
+      bag.stations.delete(element.id);
+      mesh = null;
+    }
     if (!mesh) {
       mesh = buildModel(element);
       bag.stations.set(element.id, mesh);
@@ -93,7 +99,7 @@ function syncWorld(scene, live, bag) {
     }
     const held = bag.hold?.id === element.id ? bag.hold : null;
     const at = held || spot(element);
-    mesh.position.set(at.x, 0, at.z);
+    mesh.position.set(at.x, at.y || 0, at.z);
     mesh.rotation.y = at.yaw;
     if (held && Math.hypot(spot(element).x - held.x, spot(element).z - held.z) < 0.02) bag.hold = null;
   });
@@ -118,7 +124,7 @@ function syncWorld(scene, live, bag) {
       bag.tokens.set(mover.id, mesh);
       scene.add(mesh);
     }
-    mesh.position.set((mover.x || 0) * METER, 0.96, (mover.y || 0) * METER);
+    mesh.position.set(mover.x || 0, Number.isFinite(mover.y) ? mover.y : 0.96, mover.z || 0);
   });
 }
 

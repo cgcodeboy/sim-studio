@@ -39,7 +39,7 @@ function placeHold(ctx, pose) {
   const mesh = ctx.bag.stations.get(ctx.drag.id);
   ctx.bag.hold = { id: ctx.drag.id, ...pose };
   if (!mesh) return;
-  mesh.position.set(pose.x, 0, pose.z);
+  mesh.position.set(pose.x, pose.y || 0, pose.z);
   mesh.rotation.y = pose.yaw;
 }
 
@@ -54,7 +54,7 @@ function onDown(ctx, event) {
   const id = node.userData.elementId;
   ctx.drag = {
     id, shift: event.shiftKey, pointer: event.pointerId,
-    x: node.position.x, z: node.position.z, yaw: node.rotation.y,
+    x: node.position.x, y: node.position.y, z: node.position.z, yaw: node.rotation.y,
     cx: event.clientX, cy: event.clientY, moved: false, grab: null
   };
   aim(ctx.dom, event, ctx.pointer);
@@ -73,7 +73,7 @@ function onMove(ctx, event) {
   if (!drag.moved) ctx.live.current.dispatch({ type: "checkpoint" });
   drag.moved = true;
   const pose = drag.shift
-    ? { x: drag.x, z: drag.z, yaw: drag.yaw + dx * 0.01 }
+    ? { x: drag.x, y: drag.y, z: drag.z, yaw: drag.yaw + dx * 0.01 }
     : groundPose(ctx, event, drag);
   if (!pose) return;
   placeHold(ctx, pose);
@@ -84,7 +84,7 @@ function groundPose(ctx, event, drag) {
   aim(ctx.dom, event, ctx.pointer);
   ctx.raycaster.setFromCamera(ctx.pointer, ctx.camera);
   if (!drag.grab || ctx.raycaster.ray.intersectPlane(ground, ctx.hit) === null) return null;
-  return { x: ctx.hit.x - drag.grab.x, z: ctx.hit.z - drag.grab.z, yaw: drag.yaw };
+  return { x: ctx.hit.x - drag.grab.x, y: drag.y, z: ctx.hit.z - drag.grab.z, yaw: drag.yaw };
 }
 
 function onUp(ctx, event) {

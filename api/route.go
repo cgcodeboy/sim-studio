@@ -16,6 +16,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/library", catalog.List)
 	mux.HandleFunc("POST /api/dialogue/turns", turns.Turn)
+	mux.HandleFunc("POST /api/dialogue/conflicts", turns.Conflicts)
 	mux.HandleFunc("GET /api/dialogue/sessions", turns.ListSessions)
 	mux.HandleFunc("POST /api/dialogue/sessions", turns.CreateSession)
 	mux.HandleFunc("GET /api/dialogue/sessions/{id}", turns.ReadSession)

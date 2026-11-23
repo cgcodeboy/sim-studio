@@ -21,17 +21,60 @@ type Task struct {
 	Chain   bool           `json:"chain,omitempty"`
 	Run     bool           `json:"run,omitempty"`
 	Gap     int            `json:"gap,omitempty"`
+	Places  []Place        `json:"places,omitempty"`
+	Line    []string       `json:"line,omitempty"`
+	Side    []Dock         `json:"side,omitempty"`
+	Span    []Bridge       `json:"span,omitempty"`
 	More    []Task         `json:"more,omitempty"`
 }
 
+type Dock struct {
+	Element string `json:"element"`
+	Host    string `json:"host"`
+}
+
+type Bridge struct {
+	Element string `json:"element"`
+	From    string `json:"from"`
+	To      string `json:"to"`
+}
+
+type Place struct {
+	Element string    `json:"element"`
+	X       float64   `json:"x"`
+	Y       float64   `json:"y"`
+	W       float64   `json:"w,omitempty"`
+	Pose    *PoseSpot `json:"pose,omitempty"`
+}
+
+type PoseSpot struct {
+	X   float64 `json:"x"`
+	Y   float64 `json:"y"`
+	Z   float64 `json:"z"`
+	Yaw float64 `json:"yaw"`
+	Len float64 `json:"len"`
+}
+
 type element struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Name string    `json:"name"`
+	Type string    `json:"type"`
+	X    float64   `json:"x,omitempty"`
+	Y    float64   `json:"y,omitempty"`
+	W    float64   `json:"w,omitempty"`
+	H    float64   `json:"h,omitempty"`
+	Pose *PoseSpot `json:"pose,omitempty"`
+}
+
+type pageLink struct {
+	From     string `json:"from"`
+	To       string `json:"to"`
+	FromPort int    `json:"fromPort,omitempty"`
 }
 
 type agent struct {
-	Name     string    `json:"name"`
-	Elements []element `json:"elements"`
+	Name     string     `json:"name"`
+	Elements []element  `json:"elements"`
+	Links    []pageLink `json:"links,omitempty"`
 }
 
 // Input 是这一轮的原话和当前工程的轮廓。
@@ -77,7 +120,7 @@ func finish(task Task) Task {
 	case "layout":
 		task.Status = "已写入"
 		if strings.TrimSpace(task.Reply) == "" {
-			task.Reply = "已把模块按流程排开。"
+			task.Reply = "已按流程排好平面，并按工序摆好三维的位置、朝向、高度和长度。"
 		}
 	default:
 		task.Intent = "clarify"

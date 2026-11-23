@@ -1,5 +1,5 @@
 import { findType } from "./catalog.js";
-import { addElement, addLink, clone, moveElement, projectAgent, removeElements, setElementProp } from "./model.js";
+import { addElement, addLink, clone, moveElement, projectAgent, removeElements, setElementProp, setPose, setSize } from "./model.js";
 
 export function outline(project, pageId, text, sessionId) {
   const page = projectAgent(project, pageId);
@@ -10,30 +10,40 @@ export function outline(project, pageId, text, sessionId) {
     session: sessionId || "",
     agents: (project?.agents || []).map((agent) => ({
       name: agent.name,
-      elements: agent.elements.map((item) => ({ name: item.name, type: item.type }))
+      elements: (agent.elements || []).map((item) => ({
+        name: item.name, type: item.type, x: item.x, y: item.y, w: item.w, h: item.h, pose: item.pose || null
+      })),
+      links: (agent.links || []).map((link) => ({
+        from: (agent.elements.find((item) => item.id === link.from) || {}).name,
+        to: (agent.elements.find((item) => item.id === link.to) || {}).name,
+        fromPort: link.fromPort || 0
+      })).filter((link) => link.from && link.to)
     }))
   };
 }
 
 export function applyTask(project, task, pageId) {
-  let applied = applyOne(project, task, pageId);
+  let created = [];
+  let applied = applyOne(project, task, pageId, created);
+  if (applied.created) created = created.concat(applied.created);
   for (const extra of task?.more || []) {
     if (applied.failed) return applied;
     const base = applied.project || project;
-    const next = applyOne(base, { ...extra, status: extra.status || "已写入" }, applied.pageId || pageId);
+    const next = applyOne(base, { ...extra, status: extra.status || "已写入" }, applied.pageId || pageId, created);
     if (next.failed) return { ...applied, failed: next.failed };
+    if (next.created) created = created.concat(next.created);
     applied = { ...next, changed: applied.changed || next.changed };
   }
   return applied;
 }
 
-function applyOne(project, task, pageId) {
+function applyOne(project, task, pageId, created) {
   if (!project || !task || task.status !== "已写入") return { project, changed: false };
   if (task.intent === "run" || task.intent === "pause" || task.intent === "stop") return { project, changed: false };
   const agent = findAgent(project, task.agent) || projectAgent(project, pageId) || project.agents[0];
   if (!agent) return { project, changed: false, failed: "没有找到页面" + (task.agent ? " " + task.agent : "") + "。" };
   if (task.intent === "place") return place(project, agent, task);
-  if (task.intent === "layout") return arrange(project, agent, task);
+  if (task.intent === "layout") return arrange(project, agent, task, created);
   if (task.intent === "tie") return tieLoose(project, agent);
   if (task.intent === "set") return setProp(project, agent, task);
   if (task.intent === "link") return link(project, agent, task);
@@ -51,165 +61,45 @@ function place(project, agent, task) {
     ids.push(added.id);
   }
   if (task.chain && ids.length > 1) next = chain(next, agent.id, ids);
-  return { project: next, changed: true, pageId: agent.id, selected: { kind: "element", id: ids[ids.length - 1] } };
+  return { project: next, changed: true, pageId: agent.id, created: ids, selected: { kind: "element", id: ids[ids.length - 1] } };
 }
 
-function arrange(project, agent, task) {
-  if (!agent.elements.length) return { project, changed: false, failed: "页面上还没有模块。" };
-  const spots = placeSlots(agent, gapOf(task));
+function arrange(project, agent, task, created) {
+  const spots = Array.isArray(task.places) ? task.places : [];
+  if (!agent.elements.length) return { project, changed: false };
+  if (!spots.length) return { project, changed: false };
   let next = project;
-  let right = 0;
-  let bottom = 0;
+  const seen = new Set();
   for (const spot of spots) {
-    next = moveElement(next, agent.id, spot.id, spot.x, spot.y);
-    right = Math.max(right, spot.x + spot.w);
-    bottom = Math.max(bottom, spot.y + spot.h);
+    const element = resolveSpot(agent, created, spot.element);
+    if (!element || !spot.pose || seen.has(element.id)) continue;
+    seen.add(element.id);
+    next = moveElement(next, agent.id, element.id, spot.x, spot.y);
+    if (Number(spot.w) > 0) next = setSize(next, agent.id, element.id, Number(spot.w), element.h);
+    next = setPose(next, agent.id, element.id, spot.pose);
   }
-  next = fitFrame(next, agent.id, right + 48, bottom + 48);
-  return { project: next, changed: true, pageId: agent.id, selected: { kind: "agent", id: agent.id } };
+  if (!seen.size) return { project, changed: false };
+  return { project: fit(next, agent.id), changed: true, pageId: agent.id, selected: { kind: "agent", id: agent.id } };
 }
 
-function gapOf(task) {
-  const gap = Number(task && task.gap);
-  if (gap >= 4 && gap <= 40) return gap;
-  return 8;
+function resolveSpot(agent, created, name) {
+  const fresh = String(name || "").trim().match(/^新(\d+)$/);
+  if (fresh) return agent.elements.find((item) => item.id === created[Number(fresh[1]) - 1]) || null;
+  return findElement(agent, name);
 }
 
-function placeSlots(agent, gap) {
-  const links = linkEnds(agent);
-  const spine = spineOf(agent.elements, links);
-  const onSpine = new Set(spine);
-  const box = modulePitch(agent, gap);
-  const extra = sideGroups(agent, onSpine, links, spine[0]);
-  const stride = extra.size ? box.y * 2 : box.y;
-  const pos = new Map();
-  spine.forEach((id, index) => pos.set(id, spinePoint(index, box, stride)));
-  extra.forEach((list, host) => tuckBeside(list, pos.get(host), box, pos));
-  shiftInto(pos);
-  return agent.elements.map((element) => ({
-    id: element.id,
-    x: pos.get(element.id).x,
-    y: pos.get(element.id).y,
-    w: element.w || 156,
-    h: element.h || 84
-  }));
-}
-
-function sideGroups(agent, onSpine, links, fallback) {
-  const extra = new Map();
-  agent.elements.forEach((element) => {
-    if (onSpine.has(element.id)) return;
-    const host = hostOnSpine(element.id, onSpine, links, fallback);
-    if (!extra.has(host)) extra.set(host, []);
-    extra.get(host).push(element);
-  });
-  return extra;
-}
-
-function modulePitch(agent, gap) {
-  const width = Math.max(...agent.elements.map((element) => element.w || 156));
-  const height = Math.max(...agent.elements.map((element) => element.h || 84));
-  return { x: width + gap, y: height + gap };
-}
-
-function spinePoint(index, box, stride) {
-  const perRow = 8;
-  const band = Math.floor(index / perRow);
-  let xCol = index % perRow;
-  if (band % 2 === 1) xCol = perRow - 1 - xCol;
-  return { x: 36 + xCol * box.x, y: 48 + band * stride };
-}
-
-function tuckBeside(list, host, box, pos) {
-  let above = 1;
-  let below = 1;
-  list.forEach((element) => {
-    const waste = /sink|dispose|exit/i.test(element.type || "");
-    const step = waste ? below : above;
-    if (waste) below += 1;
-    else above += 1;
-    pos.set(element.id, { x: host.x, y: host.y + (waste ? step : -step) * box.y });
-  });
-}
-
-function shiftInto(pos) {
-  let minX = Infinity;
-  let minY = Infinity;
-  pos.forEach((point) => {
-    minX = Math.min(minX, point.x);
-    minY = Math.min(minY, point.y);
-  });
-  pos.forEach((point) => {
-    point.x += 36 - minX;
-    point.y += 48 - minY;
-  });
-}
-
-function linkEnds(agent) {
-  const out = new Map(agent.elements.map((element) => [element.id, []]));
-  const inn = new Map(agent.elements.map((element) => [element.id, []]));
-  for (const link of agent.links || []) {
-    if (!out.has(link.from) || !inn.has(link.to)) continue;
-    out.get(link.from).push(link.to);
-    inn.get(link.to).push(link.from);
-  }
-  return { out, inn };
-}
-
-function spineOf(elements, links) {
-  const col = columnOf(elements, links);
-  let best = elements[0].id;
-  elements.forEach((element) => {
-    if (col.get(element.id) > col.get(best)) best = element.id;
-  });
-  const path = [];
-  const seen = new Set();
-  let cur = best;
-  while (cur && !seen.has(cur)) {
-    seen.add(cur);
-    path.push(cur);
-    const preds = (links.inn.get(cur) || []).slice().sort((a, b) => col.get(b) - col.get(a));
-    cur = preds[0];
-  }
-  path.reverse();
-  return path;
-}
-
-function hostOnSpine(id, onSpine, links, fallback) {
-  const seen = new Set();
-  let cur = id;
-  while (cur && !onSpine.has(cur) && !seen.has(cur)) {
-    seen.add(cur);
-    const preds = links.inn.get(cur) || [];
-    if (!preds.length) break;
-    cur = preds[0];
-  }
-  return onSpine.has(cur) ? cur : fallback;
-}
-
-function columnOf(elements, links) {
-  const col = new Map();
-  const visiting = new Set();
-  const depth = (id) => {
-    if (col.has(id)) return col.get(id);
-    if (visiting.has(id)) return 0;
-    visiting.add(id);
-    const preds = links.inn.get(id) || [];
-    const value = preds.length ? Math.max(...preds.map(depth)) + 1 : 0;
-    visiting.delete(id);
-    col.set(id, value);
-    return value;
-  };
-  elements.forEach((element) => depth(element.id));
-  return col;
-}
-
-function fitFrame(project, agentId, w, h) {
+function fit(project, agentId) {
   const next = clone(project);
   const page = projectAgent(next, agentId);
   if (!page) return project;
-  page.w = Math.max(800, Math.ceil(w / 10) * 10);
-  page.h = Math.max(600, Math.ceil(h / 10) * 10);
+  let right = 0;
+  let bottom = 0;
+  page.elements.forEach((element) => {
+    right = Math.max(right, element.x + (element.w || 156));
+    bottom = Math.max(bottom, element.y + (element.h || 84));
+  });
+  page.w = Math.max(page.w || 0, 800, Math.ceil((right + 48) / 10) * 10);
+  page.h = Math.max(page.h || 0, 600, Math.ceil((bottom + 48) / 10) * 10);
   return next;
 }
 

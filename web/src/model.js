@@ -111,17 +111,31 @@ export function moveElement(project, agentId, elementId, x, y) {
   return next;
 }
 
+export function setSize(project, agentId, elementId, w, h) {
+  const next = clone(project);
+  const element = projectAgent(next, agentId)?.elements.find((item) => item.id === elementId);
+  if (!element) return project;
+  if (Number.isFinite(w) && w > 0) element.w = Math.round(w / 10) * 10;
+  if (Number.isFinite(h) && h > 0) element.h = Math.round(h / 10) * 10;
+  return next;
+}
+
 export function setPose(project, agentId, elementId, pose) {
   if (!pose || !Number.isFinite(pose.x) || !Number.isFinite(pose.z)) return project;
   const next = clone(project);
   const element = projectAgent(next, agentId)?.elements.find((item) => item.id === elementId);
   if (!element) return project;
+  const prev = element.pose || {};
   const yaw = Number.isFinite(pose.yaw) ? pose.yaw : 0;
+  const y = Number.isFinite(pose.y) ? pose.y : (Number.isFinite(prev.y) ? prev.y : 0);
+  const len = Number.isFinite(pose.len) ? pose.len : prev.len;
   element.pose = {
     x: Math.round(pose.x * 1000) / 1000,
+    y: Math.round(y * 1000) / 1000,
     z: Math.round(pose.z * 1000) / 1000,
     yaw: Math.round(yaw * 1000) / 1000
   };
+  if (Number.isFinite(len) && len > 0) element.pose.len = Math.round(len * 1000) / 1000;
   return next;
 }
 

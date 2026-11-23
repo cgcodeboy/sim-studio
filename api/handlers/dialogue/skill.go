@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"log"
+	"strconv"
 	"strings"
 )
 
@@ -126,21 +127,54 @@ func skillUser(in Input) string {
 	}
 	text.WriteString("当前打开的是 " + page + "。没有点名页面时，agent 填这个名字。点名了别的页面，agent 填那个名字。\n")
 	for _, item := range in.Agents {
-		text.WriteString(item.Name + "：")
-		if len(item.Elements) == 0 {
-			text.WriteString("还没有模块")
-		}
-		for i, element := range item.Elements {
-			if i > 0 {
-				text.WriteString("、")
-			}
-			text.WriteString(element.Name + "（" + element.Type + "）")
-		}
-		text.WriteString("。\n")
+		writeAgent(&text, item)
 	}
 	if in.Memory != "" {
 		text.WriteString(in.Memory)
 	}
 	text.WriteString(in.Text)
 	return text.String()
+}
+
+func num(value float64) string {
+	return strconv.FormatFloat(value, 'f', 3, 64)
+}
+
+func writeAgent(text *strings.Builder, item agent) {
+	text.WriteString(item.Name + "：")
+	if len(item.Elements) == 0 {
+		text.WriteString("还没有模块。\n")
+		return
+	}
+	for i, element := range item.Elements {
+		if i > 0 {
+			text.WriteString("、")
+		}
+		text.WriteString(element.Name + "（" + element.Type)
+		if element.W > 0 && element.H > 0 {
+			text.WriteString(" " + strconv.Itoa(int(element.W)) + "×" + strconv.Itoa(int(element.H)))
+		}
+		text.WriteString(" 平面 " + strconv.Itoa(int(element.X)) + "," + strconv.Itoa(int(element.Y)))
+		if element.Pose != nil {
+			pose := element.Pose
+			text.WriteString(" 三维 " + num(pose.X) + "," + num(pose.Y) + "," + num(pose.Z) + " 朝向 " + num(pose.Yaw) + " 长 " + num(pose.Len))
+		}
+		text.WriteString("）")
+	}
+	text.WriteString("。\n")
+	if len(item.Links) == 0 {
+		return
+	}
+	text.WriteString("连线：")
+	for i, link := range item.Links {
+		if i > 0 {
+			text.WriteString("、")
+		}
+		text.WriteString(link.From)
+		if link.FromPort > 0 {
+			text.WriteString(" 出口" + strconv.Itoa(link.FromPort+1))
+		}
+		text.WriteString("→" + link.To)
+	}
+	text.WriteString("。\n")
 }

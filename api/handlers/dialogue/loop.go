@@ -46,6 +46,14 @@ func runLoop(ctx context.Context, call skillCall) (Task, bool) {
 		if !ok {
 			continue
 		}
+		if planned.Act == "layout" && !hasOtherWork(planned) {
+			task, laid := layPage(ctx, call, planned, nil)
+			if laid {
+				return task, true
+			}
+			gaps = "这不是工序缺口。请再输出 act 为 layout，不要新增模块。由布局专员给出互不重叠的平面位置和三维姿态。"
+			continue
+		}
 		if task, done := readyTask(planned, call.in.Page); done {
 			return task, true
 		}
@@ -219,11 +227,6 @@ func readyTask(planned plan, page string) (Task, bool) {
 		return refuseTask(planned.Say), true
 	case "query":
 		return clarify(spoken(planned.Say, "这句没读成可执行的计划。")), true
-	case "layout":
-		if hasOtherWork(planned) {
-			return Task{}, false
-		}
-		return finish(Task{Intent: "layout", Agent: page, Reply: spoken(planned.Say, ""), Gap: layoutGap(planned.Gap)}), true
 	case "control":
 		if hasOtherWork(planned) {
 			return Task{}, false

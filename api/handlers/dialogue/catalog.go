@@ -12,6 +12,34 @@ func (b block) canon() string {
 	return strings.ReplaceAll(b.display, " ", "")
 }
 
+func businessOf(kind string) string {
+	for _, item := range blocks {
+		if item.display == kind {
+			return familyName(item.family)
+		}
+	}
+	return "其他"
+}
+
+func familyName(family string) string {
+	switch family {
+	case "process":
+		return "物料"
+	case "handling":
+		return "搬运"
+	case "fluid":
+		return "流体"
+	case "pedestrian":
+		return "行人"
+	case "road":
+		return "道路"
+	case "rail":
+		return "铁路"
+	default:
+		return "其他"
+	}
+}
+
 func (b block) terms() []string {
 	out := []string{b.display}
 	return append(out, b.aliases...)

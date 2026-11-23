@@ -104,22 +104,34 @@ export function beltTexture(length) {
 }
 
 export function lengthOf(element, min) {
+  const len = element?.pose?.len;
+  if (Number.isFinite(len) && len > 0) return Math.max(min, len);
   return Math.max(min, Math.max(element.w || 0, element.h || 0) * METER);
+}
+
+export function stampOf(element) {
+  return (element?.type || "") + ":" + (element?.pose?.len || 0) + ":" + (element?.w || 0) + ":" + (element?.h || 0);
 }
 
 export function spot(element) {
   const pose = element?.pose;
   if (pose && Number.isFinite(pose.x) && Number.isFinite(pose.z)) {
-    return { x: pose.x, z: pose.z, yaw: Number.isFinite(pose.yaw) ? pose.yaw : 0 };
+    return {
+      x: pose.x,
+      y: Number.isFinite(pose.y) ? pose.y : 0,
+      z: pose.z,
+      yaw: Number.isFinite(pose.yaw) ? pose.yaw : 0
+    };
   }
-  return { x: 0, z: 0, yaw: 0 };
+  return { x: 0, y: 0, z: 0, yaw: 0 };
 }
 
 export function place(element, group) {
   const at = spot(element);
-  group.position.set(at.x, 0, at.z);
+  group.position.set(at.x, at.y, at.z);
   group.rotation.y = at.yaw;
   group.userData.elementId = element.id;
+  group.userData.stamp = stampOf(element);
   return group;
 }
 

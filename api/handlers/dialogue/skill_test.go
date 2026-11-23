@@ -2,6 +2,7 @@ package dialogue
 
 import (
 	"context"
+	"math"
 	"strings"
 	"testing"
 )
@@ -50,17 +51,199 @@ func TestQueryAnswersWithoutBuilding(t *testing.T) {
 	}
 }
 
-func TestLayoutArrangesTheOpenPage(t *testing.T) {
-	task, ok := readyTask(plan{Act: "layout"}, "Main")
-	if !ok || task.Intent != "layout" || task.Status != "已写入" || task.Agent != "Main" || task.Gap != 8 {
-		t.Fatalf("%+v", task)
+func TestFitJoinsFacesAndSeparatesFluid(t *testing.T) {
+	in := Input{Page: "Main", Agents: []agent{{
+		Name: "Main",
+		Links: []pageLink{
+			{From: "source", To: "belt"},
+			{From: "belt", To: "delay"},
+			{From: "delay", To: "check"},
+			{From: "check", To: "sink"},
+			{From: "check", To: "bad", FromPort: 1},
+			{From: "check", To: "seize"},
+			{From: "seize", To: "sink"},
+			{From: "pump", To: "tank"},
+		},
+		Elements: []element{
+			{Name: "source", Type: "Source", W: 156, H: 84},
+			{Name: "belt", Type: "Conveyor", W: 220, H: 48},
+			{Name: "delay", Type: "Delay", W: 156, H: 84},
+			{Name: "check", Type: "Select Output", W: 156, H: 84},
+			{Name: "sink", Type: "Sink", W: 156, H: 84},
+			{Name: "bad", Type: "Sink", W: 156, H: 84},
+			{Name: "seize", Type: "Seize", W: 156, H: 84},
+			{Name: "pump", Type: "FluidSource", W: 156, H: 84},
+			{Name: "tank", Type: "Tank", W: 156, H: 84},
+		},
+	}}}
+	spots := fitScene(in, nil)
+	at := map[string]PoseSpot{}
+	for _, spot := range spots {
+		at[spot.Element] = *spot.Pose
+	}
+	if len(at) != 9 {
+		t.Fatalf("count %d", len(at))
+	}
+	sourceFront := at["source"].X + 1.09
+	beltStart := at["belt"].X - at["belt"].Len/2
+	if math.Abs(sourceFront-beltStart) > 0.05 || math.Abs(at["belt"].Z) > 0.01 || at["delay"].Z != 0 {
+		t.Fatalf("join %+v", at)
+	}
+	if at["bad"].Z < 1 || at["seize"].Z > -0.8 || math.Abs(at["tank"].Z-at["source"].Z) < 2 {
+		t.Fatalf("split %+v", at)
 	}
 }
 
-func TestTightLayoutKeepsTheRequestedGap(t *testing.T) {
-	task, ok := readyTask(plan{Act: "layout", Gap: 4}, "Main")
-	if !ok || task.Gap != 4 {
-		t.Fatalf("%+v", task)
+func TestConflictsNamesAGapAndAnOverlap(t *testing.T) {
+	in := Input{Page: "Main", Agents: []agent{{
+		Name:  "Main",
+		Links: []pageLink{{From: "source", To: "delay"}},
+		Elements: []element{
+			{Name: "source", Type: "Source", W: 156, H: 84},
+			{Name: "delay", Type: "Delay", W: 156, H: 84},
+		},
+	}}}
+	far := []Place{
+		{Element: "source", X: 40, Y: 80, Pose: &PoseSpot{X: 1.2, Z: 0, Len: 1.45}},
+		{Element: "delay", X: 250, Y: 80, Pose: &PoseSpot{X: 12, Z: 0, Len: 2.3}},
+	}
+	if !strings.Contains(strings.Join(conflicts(in, far, nil), " "), "没有接上") {
+		t.Fatal(conflicts(in, far, nil))
+	}
+	piled := []Place{
+		{Element: "source", X: 40, Y: 80, Pose: &PoseSpot{X: 0, Z: 0, Len: 1.45}},
+		{Element: "delay", X: 40, Y: 80, Pose: &PoseSpot{X: 0.1, Z: 0, Len: 2.3}},
+	}
+	if !strings.Contains(strings.Join(conflicts(in, piled, nil), " "), "重叠") {
+		t.Fatal(conflicts(in, piled, nil))
+	}
+}
+
+func TestSettleOpensAStackedLayout(t *testing.T) {
+	task := Task{Places: []Place{
+		{Element: "source", X: 40, Y: 80, Pose: &PoseSpot{X: 0, Z: 0, Len: 1.8}},
+		{Element: "delay", X: 40, Y: 80, Pose: &PoseSpot{X: 0.1, Z: 0, Len: 2.8}},
+		{Element: "sink", X: 40, Y: 80, Pose: &PoseSpot{X: 0, Z: 0.1, Len: 1.6}},
+	}}
+	task.Places = settle(sampleLine(), task.Places, nil)
+	if why := rejectPlaces(sampleLine(), task, nil); why != "" {
+		t.Fatal(why)
+	}
+}
+
+func TestRejectsAStackedLayout(t *testing.T) {
+	task := Task{Places: []Place{
+		{Element: "source", X: 40, Y: 80, Pose: &PoseSpot{X: 0, Z: 0, Len: 1.8}},
+		{Element: "delay", X: 40, Y: 80, Pose: &PoseSpot{X: 0.1, Z: 0, Len: 2.8}},
+		{Element: "sink", X: 40, Y: 80, Pose: &PoseSpot{X: 0, Z: 0.1, Len: 1.6}},
+	}}
+	if rejectPlaces(sampleLine(), task, nil) == "" {
+		t.Fatal("stacked layout accepted")
+	}
+}
+
+func TestAcceptsTheSceneTheSkillDrew(t *testing.T) {
+	in := Input{Page: "Main", Agents: []agent{{Name: "Main", Elements: []element{
+		{Name: "source", Type: "Source", W: 156, H: 84},
+		{Name: "check", Type: "Select Output", W: 156, H: 84},
+		{Name: "ok", Type: "Sink", W: 156, H: 84},
+		{Name: "bad", Type: "Sink", W: 156, H: 84},
+		{Name: "tank", Type: "Tank", W: 156, H: 84},
+	}}}}
+	task := Task{Places: []Place{
+		{Element: "source", X: 40, Y: 80, Pose: &PoseSpot{X: 1.2, Z: 0, Yaw: 0, Len: 1.8}},
+		{Element: "check", X: 250, Y: 80, Pose: &PoseSpot{X: 5, Z: 0, Yaw: 0, Len: 2.2}},
+		{Element: "ok", X: 460, Y: 80, Pose: &PoseSpot{X: 8.5, Z: 0, Yaw: 0, Len: 1.6}},
+		{Element: "bad", X: 250, Y: 220, Pose: &PoseSpot{X: 5, Z: 3.2, Yaw: 1.5708, Len: 1.6}},
+		{Element: "tank", X: 40, Y: 360, Pose: &PoseSpot{X: 1.2, Z: 8, Yaw: 0, Len: 2}},
+	}}
+	if why := rejectPlaces(in, task, nil); why != "" {
+		t.Fatal(why)
+	}
+}
+
+func TestBindsNumberedConveyors(t *testing.T) {
+	in := Input{Page: "Main", Agents: []agent{{Name: "Main", Elements: []element{
+		{Name: "source", Type: "Source", X: 40, Y: 200, W: 156, H: 84, Pose: &PoseSpot{X: 1.2, Len: 1.8}},
+		{Name: "conveyor", Type: "Conveyor", X: 40, Y: 400, W: 220, H: 48, Pose: &PoseSpot{X: 2, Z: 2, Len: 4}},
+		{Name: "conveyor2", Type: "Conveyor", X: 400, Y: 400, W: 220, H: 48, Pose: &PoseSpot{X: 8, Z: 2, Len: 4}},
+	}}}}
+	task := Task{Places: []Place{
+		{Element: "source", X: 40, Y: 80, Pose: &PoseSpot{X: 1.2, Z: 0, Yaw: 0, Len: 1.8}},
+		{Element: "传送带1", X: 40, Y: 320, Pose: &PoseSpot{X: 2, Z: 2, Yaw: 0, Len: 6}},
+		{Element: "传送带2", X: 400, Y: 320, Pose: &PoseSpot{X: 8, Z: 2, Yaw: 0, Len: 6}},
+	}}
+	task.Places = bindPlaces(in, task.Places, nil)
+	task.Places = separate(task.Places, roster(openAgent(in), nil))
+	if why := rejectPlaces(in, task, nil); why != "" {
+		t.Fatal(why)
+	}
+}
+
+func TestBindsConveyorByAlias(t *testing.T) {
+	in := Input{Page: "Main", Agents: []agent{{Name: "Main", Elements: []element{
+		{Name: "belt", Type: "Conveyor", W: 220, H: 48},
+	}}}}
+	task := Task{Places: []Place{{Element: "传送带", X: 40, Y: 80, Pose: &PoseSpot{X: 4, Z: 1.6, Yaw: 0, Len: 9}}}}
+	task.Places = bindPlaces(in, task.Places, nil)
+	if why := rejectPlaces(in, task, nil); why != "" || task.Places[0].Element != "belt" {
+		t.Fatal(why, task.Places[0].Element)
+	}
+}
+
+func TestSeparateOpensATightLine(t *testing.T) {
+	task := Task{Places: []Place{
+		{Element: "source", X: 40, Y: 80, Pose: &PoseSpot{X: 0, Z: 0, Len: 1.8}},
+		{Element: "delay", X: 40, Y: 80, Pose: &PoseSpot{X: 1, Z: 0, Len: 2.8}},
+		{Element: "sink", X: 40, Y: 80, Pose: &PoseSpot{X: 2, Z: 0, Len: 1.6}},
+	}}
+	task.Places = separate(task.Places, roster(openAgent(sampleLine()), nil))
+	if why := rejectPlaces(sampleLine(), task, nil); why != "" {
+		t.Fatal(why)
+	}
+}
+
+func TestAcceptsASeparatedLayout(t *testing.T) {
+	task := Task{Places: []Place{
+		{Element: "source", X: 40, Y: 80, Pose: &PoseSpot{X: 1.2, Y: 0, Z: 0, Yaw: 0, Len: 1.8}},
+		{Element: "delay", X: 244, Y: 80, Pose: &PoseSpot{X: 3.7, Y: 0, Z: 0, Yaw: 0, Len: 2.8}},
+		{Element: "sink", X: 448, Y: 80, Pose: &PoseSpot{X: 6.4, Y: 0, Z: 1.6, Yaw: 0, Len: 1.6}},
+	}}
+	if why := rejectPlaces(sampleLine(), task, nil); why != "" {
+		t.Fatal(why)
+	}
+}
+
+func sampleLine() Input {
+	return Input{Page: "Main", Agents: []agent{{
+		Name:  "Main",
+		Links: []pageLink{{From: "source", To: "delay"}, {From: "delay", To: "sink"}},
+		Elements: []element{
+			{Name: "source", Type: "Source", W: 156, H: 84},
+			{Name: "delay", Type: "Delay", W: 156, H: 84},
+			{Name: "sink", Type: "Sink", W: 156, H: 84},
+		},
+	}}}
+}
+
+func TestJoinAbutsTheLine(t *testing.T) {
+	in := Input{Page: "Main", Agents: []agent{{Name: "Main", Links: []pageLink{{From: "source", To: "sink"}}, Elements: []element{
+		{Name: "source", Type: "Source", W: 156, H: 84},
+		{Name: "belt", Type: "Conveyor", W: 220, H: 48},
+		{Name: "sink", Type: "Sink", W: 156, H: 84},
+	}}}}
+	places := map[string]Place{}
+	for _, spot := range joinLinks(in, nil, 8) {
+		places[spot.Element] = spot
+	}
+	source, sink, belt := places["source"].Pose, places["sink"].Pose, places["belt"].Pose
+	gap := (sink.X - sink.Len/2) - (source.X + source.Len/2)
+	if math.Abs(gap-0.2) > 0.02 {
+		t.Fatalf("gap %v", gap)
+	}
+	run := (sink.X + sink.Len/2) - (source.X - source.Len/2)
+	if math.Abs(belt.Len-run) > 0.02 || belt.Z < 1 {
+		t.Fatalf("belt %+v run %v", belt, run)
 	}
 }
 
@@ -93,7 +276,7 @@ func TestChangeStepSetsTheNamedElement(t *testing.T) {
 }
 
 func TestSkillsAreLoaded(t *testing.T) {
-	names := append([]string{"router", "planner", "checker"}, specialists...)
+	names := append([]string{"router", "planner", "checker", "layout"}, specialists...)
 	for _, name := range names {
 		text, ok := skillPrompt(name, nil)
 		if !ok || !strings.Contains(text, "JSON") {
