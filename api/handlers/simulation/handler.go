@@ -3,17 +3,20 @@ package simulation
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/cgcodeboy/sim-studio/api/handlers/respond"
 	"github.com/cgcodeboy/sim-studio/internal/app"
 )
 
 type Handler struct {
-	app *app.App
+	app  *app.App
+	mu   sync.Mutex
+	runs map[string]*preview
 }
 
 func New(application *app.App) *Handler {
-	return &Handler{app: application}
+	return &Handler{app: application, runs: map[string]*preview{}}
 }
 
 func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {

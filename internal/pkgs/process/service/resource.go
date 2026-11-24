@@ -1,10 +1,11 @@
 package service
 
 import (
-	"github.com/cgcodeboy/sim-studio/internal/pkgs/process/domain"
+	"math"
 	"time"
 
 	"github.com/cgcodeboy/des-engine/engine"
+	"github.com/cgcodeboy/sim-studio/internal/pkgs/process/domain"
 )
 
 func PlaceResource(w domain.Repository, el domain.Block) (bool, error) {
@@ -21,7 +22,9 @@ func PlaceResource(w domain.Repository, el domain.Block) (bool, error) {
 }
 
 func poolOf(w domain.Repository, el domain.Block) *domain.Units {
-	return w.EnsurePool(el.ID, int(Number(el.Props["capacity"], 1)))
+	pool := w.EnsurePool(el.ID, int(Number(el.Props["capacity"], 1)))
+	pool.X, pool.Y, pool.Z, pool.Yaw = el.Px, el.Py, el.Pz, el.Yaw
+	return pool
 }
 
 func newResource(w domain.Repository, el domain.Block) *resourceAtom {
@@ -39,7 +42,7 @@ func newResource(w domain.Repository, el domain.Block) *resourceAtom {
 	}
 	return &resourceAtom{
 		kind: canon(el.Type), pool: pool, delay: delay,
-		sheet: w.Board(), id: el.ID, x: el.X, y: el.Y,
+		sheet: w.Board(), id: el.ID, el: el, x: el.X, y: el.Y,
 	}
 }
 
@@ -51,18 +54,37 @@ type resourceAtom struct {
 	waiting int
 	sheet   domain.Board
 	id      string
+	el      domain.Block
+	body    string
 	x, y    float64
 }
 
 func (r *resourceAtom) Advance() (time.Duration, bool) {
 	if r.busy {
-		return r.delay, true
+		return scaled(r.sheet, r.span()), true
 	}
 	return 0, false
 }
 
+func (r *resourceAtom) span() time.Duration {
+	if r.delay > r.walk() {
+		return r.delay
+	}
+	return r.walk()
+}
+
+func (r *resourceAtom) walk() time.Duration {
+	x, y, z, _, _ := spanOf(r.el)
+	dx, dy, dz := r.pool.X-x, r.pool.Y-y, r.pool.Z-z
+	dist := math.Sqrt(dx*dx + dy*dy + dz*dz)
+	return time.Duration(dist / 1.3 * float64(time.Second))
+}
+
 func (r *resourceAtom) Output() []engine.Message {
-	return []engine.Message{{Port: "out", Payload: []byte{1}}}
+	if r.body == "" {
+		r.body = r.id
+	}
+	return []engine.Message{{Port: "out", Payload: []byte(r.body)}}
 }
 
 func (r *resourceAtom) Internal() {
@@ -71,6 +93,7 @@ func (r *resourceAtom) Internal() {
 		r.pool.Free++
 	}
 	r.sheet.Leave(r.id)
+	r.sheet.Hide("person:" + r.id)
 	r.sheet.SetSeries(r.id, "engine", float64(r.pool.Free))
 	if r.waiting > 0 && r.pool.Free > 0 && r.takes() {
 		r.waiting--
@@ -80,23 +103,36 @@ func (r *resourceAtom) Internal() {
 	}
 }
 
-func (r *resourceAtom) External(time.Duration, engine.Message) {
+func (r *resourceAtom) External(_ time.Duration, msg engine.Message) {
+	r.body = bodyID(msg, r.id)
 	if r.kind == "Release" || r.kind == "ResourceTaskEnd" || r.kind == "ResourceDetach" {
 		r.busy = true
+		r.pose()
 		return
 	}
 	if !r.takes() {
 		r.busy = true
+		r.pose()
 		return
 	}
 	if r.pool.Free <= 0 || r.busy {
 		r.waiting++
+		showStay(r.sheet, r.body, r.el, "wait", 0)
 		r.sheet.SetSeries(r.id, "engine", float64(r.waiting))
 		return
 	}
 	r.pool.Free--
 	r.busy = true
 	r.sheet.Enter(r.id, r.x, r.y)
+	r.pose()
+}
+
+func (r *resourceAtom) pose() {
+	showStay(r.sheet, r.body, r.el, "work", r.delay.Seconds())
+	x, y, z, yaw, _ := spanOf(r.el)
+	dx, dy, dz := place(x, y, z, yaw, 0, 0.55)
+	seconds := r.walk().Seconds()
+	r.sheet.Begin("person:"+r.id, "person", "walk", specOf(r.pool.X, r.pool.Y, r.pool.Z, dx, dy, dz, yaw, 1.3, seconds))
 }
 
 func (r *resourceAtom) takes() bool {

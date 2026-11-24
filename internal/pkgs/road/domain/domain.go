@@ -10,9 +10,10 @@ var ErrInvalid = errors.New("invalid")
 
 // Block 是调用方抄进来的一个元件。本领域不引用模型。
 type Block struct {
-	ID, Type   string
-	X, Y, W, H float64
-	Props      map[string]any
+	ID, Type             string
+	X, Y, W, H           float64
+	Px, Py, Pz, Yaw, Len float64
+	Props                map[string]any
 }
 
 // Link 是抄进来的一根连线。
@@ -33,10 +34,14 @@ type Board interface {
 	SetSeries(name, source string, value float64)
 	SetMover(id string, x, y, heading float64)
 	Spots() []struct {
-		ID string
-		X  float64
-		Y  float64
+		ID   string
+		X, Y float64
+		Z    float64
 	}
+	Begin(id, kind, action string, spec [9]float64)
+	Hide(id string)
+	When() time.Duration
+	Pace() float64
 }
 
 // Units 是资源或货位的剩余数量。

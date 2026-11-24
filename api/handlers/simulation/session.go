@@ -18,6 +18,9 @@ type studio struct {
 	now     time.Duration
 	horizon time.Duration
 	source  string
+	ticking time.Time
+	elapsed time.Duration
+	shellAt time.Duration
 }
 
 func (s *studio) Source() string             { return s.source }
@@ -70,4 +73,36 @@ func (s *studio) Advance() {
 	for _, step := range s.steps {
 		step(s.now)
 	}
+}
+
+// Catchup 用真实经过的时间推动样本钟。引擎只在事件点上跳，画面需要连续的时间。
+func (s *studio) Catchup() {
+	if !s.ticking.IsZero() {
+		s.elapsed += time.Since(s.ticking)
+		s.ticking = time.Now()
+	}
+	pace := s.sheet.Pace()
+	if pace < 1 {
+		pace = 1
+	}
+	paced := time.Duration(float64(s.elapsed) * pace)
+	for s.shell && s.shellAt+time.Second <= paced {
+		s.shellAt += time.Second
+		for _, step := range s.steps {
+			step(s.shellAt)
+		}
+	}
+	s.now = s.elapsed
+	s.sheet.SetWhen(s.now)
+}
+
+// HoldClock 暂停样本钟。
+func (s *studio) HoldClock() {
+	s.Catchup()
+	s.ticking = time.Time{}
+}
+
+// ReleaseClock 从暂停处继续样本钟。
+func (s *studio) ReleaseClock() {
+	s.ticking = time.Now()
 }

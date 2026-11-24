@@ -37,6 +37,30 @@ export function startRecord(body) {
   return send("/api/records", { method: "POST", body: JSON.stringify(body) });
 }
 
+export function startLive(body) {
+  return send("/api/live", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function getLive(id) {
+  return send("/api/live/" + encodeURIComponent(id));
+}
+
+export function pauseLive(id) {
+  return send("/api/live/" + encodeURIComponent(id) + "/pause", { method: "POST", body: "{}" });
+}
+
+export function resumeLive(id) {
+  return send("/api/live/" + encodeURIComponent(id) + "/resume", { method: "POST", body: "{}" });
+}
+
+export function stopLive(id) {
+  return send("/api/live/" + encodeURIComponent(id) + "/stop", { method: "POST", body: "{}" });
+}
+
+export function speedLive(id, speed) {
+  return send("/api/live/" + encodeURIComponent(id) + "/speed", { method: "POST", body: JSON.stringify({ speed }) });
+}
+
 export function getRecord(id) {
   return send("/api/records/" + encodeURIComponent(id));
 }

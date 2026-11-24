@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
-import { deleteProject, deleteSession, getRecord, listProjects, listSessions, createSession, pauseRecord, putProject, readProject, readSession, renameSession, resumeRecord, setSpeed, startRecord, stopRecord, turnDialogue } from "./api.js";
+import { deleteProject, deleteSession, getLive, getRecord, listProjects, listSessions, createSession, pauseLive, pauseRecord, putProject, readProject, readSession, renameSession, resumeLive, resumeRecord, setSpeed, speedLive, startLive, startRecord, stopLive, stopRecord, turnDialogue } from "./api.js";
 import { applyTask, outline } from "./dialogue.js";
 import { advanceExperiment, advanceFlow, flowMovers, initialRuntime } from "./sim.js";
 import { cardTalk, talkFromSession } from "./talks.js";
@@ -508,15 +508,16 @@ function reducer(state, action) {
     case "started":
       return {
         ...state,
-        runtime: { ...action.result.sample, recordId: action.result.recordId, status: action.result.status },
+        runtime: { ...action.result.sample, recordId: action.result.recordId, status: action.result.status, live: action.result.live, stamp: Date.now() },
         ui: { ...state.ui, mode: "run", play: true, showErrors: false, notice: "", context: null, dialog: null }
       };
     case "sample": {
       const status = action.result.status;
       const finished = status === "finished" || status === "interrupted";
+      const runtime = { ...action.result.sample, recordId: action.result.recordId, status, live: state.runtime?.live, stamp: Date.now() };
       return {
         ...state,
-        runtime: finished ? { ...action.result.sample, recordId: action.result.recordId, status } : { ...action.result.sample, recordId: action.result.recordId, status },
+        runtime,
         ui: {
           ...state.ui,
           play: status === "running",
@@ -557,7 +558,7 @@ function speedName(value) {
 function localSample(project, runtime, speed) {
   const experiment = projectExperiment(project, runtime.experimentId);
   const agent = projectAgent(project, experiment?.page || "main");
-  const dt = speed === 0 ? 4 : speed === 10 ? 2 : 0.2;
+  const dt = speed === 0 ? 2 : speed === 10 ? 1 : 0.1;
   if (experiment && experiment.type !== "simulation") return { ...advanceExperiment(experiment, runtime, dt), experimentId: runtime.experimentId };
   if (!agent) return runtime;
   const next = advanceFlow(agent, runtime, dt);
@@ -650,6 +651,13 @@ export function StoreProvider({ children }) {
         return;
       }
       const experimentId = picked.id;
+      if (picked.type === "simulation") {
+        startLive({ project, experimentId, speed: speedName(snapshot.ui.speed) }).then(
+          (result) => rawDispatch({ type: "started", result: { ...result, live: true } }),
+          () => rawDispatch({ type: "notice", text: "连不上运行服务。" })
+        );
+        return;
+      }
       putProject(project.revision || 0, project).then(
         (stored) => {
           rawDispatch({ type: "stored", project: stored, openId: stored.id, notice: "" });
@@ -671,6 +679,19 @@ export function StoreProvider({ children }) {
         if (action.type === "pause") rawDispatch({ type: "localHold", play: false, mode: "pause" });
         if (action.type === "resume") rawDispatch({ type: "localHold", play: true, mode: "run" });
         if (action.type === "stop") rawDispatch({ type: "localStop" });
+        return;
+      }
+      if (snapshot.runtime?.live) {
+        const liveId = snapshot.runtime.recordId;
+        if (action.type === "speed") rawDispatch(action);
+        const call = action.type === "pause" ? pauseLive(liveId)
+          : action.type === "resume" ? resumeLive(liveId)
+          : action.type === "stop" ? stopLive(liveId)
+          : speedLive(liveId, speedName(action.value));
+        call.then(
+          (result) => rawDispatch({ type: "sample", result }),
+          () => rawDispatch({ type: "notice", text: "连不上运行服务。" })
+        );
         return;
       }
       if (action.type === "speed") rawDispatch(action);
@@ -793,11 +814,12 @@ export function StoreProvider({ children }) {
         if (!snap.ui.play || !project || snap.runtime?.recordId !== "local") return;
         const sample = localSample(project, snap.runtime, snap.ui.speed);
         rawDispatch({ type: "sample", result: { recordId: "local", status: "running", sample } });
-      }, 200);
+      }, 100);
       return () => clearInterval(id);
     }
     const id = setInterval(() => {
-      getRecord(recordId).then(
+      const read = state.runtime?.live ? getLive(recordId) : getRecord(recordId);
+      read.then(
         (result) => rawDispatch({ type: "sample", result }),
         () => rawDispatch({ type: "notice", text: "连不上运行服务。" })
       );

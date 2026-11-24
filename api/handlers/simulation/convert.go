@@ -30,11 +30,24 @@ func expBlock(el model.Element) experiment.Block {
 }
 
 type copied struct {
-	ID, Type   string
-	X, Y, W, H float64
-	Props      map[string]any
+	ID, Type             string
+	X, Y, W, H           float64
+	Px, Py, Pz, Yaw, Len float64
+	Props                map[string]any
 }
 
 func copyBlock(el model.Element) copied {
-	return copied{ID: el.ID, Type: el.Type, X: el.X, Y: el.Y, W: el.W, H: el.H, Props: el.Props}
+	block := copied{ID: el.ID, Type: el.Type, X: el.X, Y: el.Y, W: el.W, H: el.H, Props: el.Props}
+	if el.Pose != nil {
+		block.Px, block.Py, block.Pz = el.Pose.X, el.Pose.Y, el.Pose.Z
+		block.Yaw, block.Len = el.Pose.Yaw, el.Pose.Len
+		return block
+	}
+	block.Px = el.X * 0.012
+	block.Pz = el.Y * 0.012
+	block.Len = el.W * 0.012
+	if block.Len < 0.4 {
+		block.Len = 1.2
+	}
+	return block
 }

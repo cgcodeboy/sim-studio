@@ -6,6 +6,7 @@ import Canvas from "./canvas.jsx";
 import { bindEdit, attachPick } from "./edit3d.js";
 import { spot, stampOf } from "./meshkit.js";
 import { buildModel, carton, release, tickModels } from "./models3d.js";
+import { car, forklift, person, train } from "./yard3d.js";
 import { useStore } from "./store.jsx";
 
 function frameCamera(camera, controls, elements) {
@@ -76,6 +77,7 @@ function watchSize(el, camera, renderer) {
 
 function syncWorld(scene, live, bag) {
   const { elements, movers } = live.current;
+  const rider = live.current.editing ? new Set() : riding(movers);
   const seen = new Set(elements.map((item) => item.id));
   bag.stations.forEach((mesh, id) => {
     if (seen.has(id)) return;
@@ -101,6 +103,7 @@ function syncWorld(scene, live, bag) {
     const at = held || spot(element);
     mesh.position.set(at.x, at.y || 0, at.z);
     mesh.rotation.y = at.yaw;
+    mesh.visible = live.current.editing || !rider.has(element.type);
     if (held && Math.hypot(spot(element).x - held.x, spot(element).z - held.z) < 0.02) bag.hold = null;
   });
   const chosen = bag.stations.get(live.current.selectedId);
@@ -119,13 +122,68 @@ function syncWorld(scene, live, bag) {
   });
   movers.forEach((mover) => {
     let mesh = bag.tokens.get(mover.id);
-    if (!mesh) {
-      mesh = carton();
+    if (!mesh || mesh.userData.kind !== mover.kind) {
+      if (mesh) {
+        scene.remove(mesh);
+        release(mesh);
+      }
+      mesh = tokenBody(mover.kind);
+      mesh.userData.kind = mover.kind;
       bag.tokens.set(mover.id, mesh);
       scene.add(mesh);
     }
-    mesh.position.set(mover.x || 0, Number.isFinite(mover.y) ? mover.y : 0.96, mover.z || 0);
+    const at = played(mover, live.current.runtime, live.current.unit, live.current.speed);
+    mesh.position.set(at.x, at.y, at.z);
+    mesh.rotation.y = at.heading;
+    if (mover.kind === "person") swingLegs(mesh);
   });
+}
+
+function played(mover, runtime, unit, speed) {
+  const pace = speed === 0 ? 60 : speed === 10 ? 10 : 1;
+  const wall = runtime?.stamp ? Math.max(0, (Date.now() - runtime.stamp) / 1000) : 0;
+  const perSecond = unit === "秒" ? 1 : unit === "小时" ? 1 / 3600 : 1 / 60;
+  const now = (runtime?.time || 0) + wall * pace * perSecond;
+  const span = (mover.t1 || 0) - (mover.t0 || 0);
+  let u = span > 1e-6 ? (now - mover.t0) / span : 1;
+  if (u < 0) u = 0;
+  if (u > 1) u = 1;
+  const fromX = Number.isFinite(mover.fromX) ? mover.fromX : mover.x || 0;
+  const fromY = Number.isFinite(mover.fromY) ? mover.fromY : mover.y || 0;
+  const fromZ = Number.isFinite(mover.fromZ) ? mover.fromZ : mover.z || 0;
+  const toX = Number.isFinite(mover.toX) ? mover.toX : fromX;
+  const toY = Number.isFinite(mover.toY) ? mover.toY : fromY;
+  const toZ = Number.isFinite(mover.toZ) ? mover.toZ : fromZ;
+  return {
+    x: fromX + (toX - fromX) * u,
+    y: fromY + (toY - fromY) * u,
+    z: fromZ + (toZ - fromZ) * u,
+    heading: Number.isFinite(mover.heading) ? mover.heading : 0
+  };
+}
+
+function riding(movers) {
+  const live = new Set(movers.map((item) => item.kind));
+  const types = new Set();
+  if (live.has("car")) ["CarSource", "CarEnter", "CarMoveTo", "CarDispose"].forEach((type) => types.add(type));
+  if (live.has("train")) ["TrainSource", "TrainEnter", "TrainMoveTo", "TrainDispose", "TrainExit"].forEach((type) => types.add(type));
+  if (live.has("person")) ["PedSource", "PedEnter", "PedGoTo", "PedWait", "PedService", "PedSink", "PedExit"].forEach((type) => types.add(type));
+  if (live.has("fork")) ["TransporterFleet", "MoveByTransporter", "SeizeTransporter", "ReleaseTransporter"].forEach((type) => types.add(type));
+  return types;
+}
+
+function tokenBody(kind) {
+  if (kind === "person") return person();
+  if (kind === "car") return car();
+  if (kind === "train") return train();
+  if (kind === "fork") return forklift();
+  return carton();
+}
+
+function swingLegs(mesh) {
+  const step = Math.sin(performance.now() / 180) * 0.45;
+  if (mesh.children[0]) mesh.children[0].rotation.x = step;
+  if (mesh.children[1]) mesh.children[1].rotation.x = -step;
 }
 
 function selectionRing() {
@@ -184,7 +242,7 @@ function mount(el, live) {
 }
 
 export default function View3D() {
-  const { state, agent, dispatch } = useStore();
+  const { state, agent, project, dispatch } = useStore();
   const host = useRef(null);
   const live = useRef({ elements: [], movers: [], editing: false, selectedId: null, dispatch });
   const editing = state.ui.mode === "edit";
@@ -192,6 +250,9 @@ export default function View3D() {
   live.current = {
     elements: agent?.elements || [],
     movers: editing ? [] : (state.runtime?.movers || []),
+    runtime: state.runtime,
+    unit: project?.unit,
+    speed: state.ui.speed,
     editing,
     selectedId,
     dispatch

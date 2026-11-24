@@ -51,7 +51,7 @@ func assemble(application *app.App, p model.Project, experimentID string, types 
 		sheet.SetReward(rewards)
 		st.source = "experiment"
 	}
-	eng, coord, err := newEngine(st.horizon)
+	eng, coord, err := newEngine(st.horizon, textOf(exp.Props["live"]) == "1")
 	if err != nil {
 		return nil, err
 	}
@@ -82,9 +82,9 @@ func rounds(exp model.Experiment) []float64 {
 	return experiment.Rounds(exp.Type, min, max, step)
 }
 
-func newEngine(horizon time.Duration) (*engine.Engine, *engine.Coordinator, error) {
+func newEngine(horizon time.Duration, realtime bool) (*engine.Engine, *engine.Coordinator, error) {
 	eng, err := engine.NewEngine(
-		engine.WithRealtime(false),
+		engine.WithRealtime(realtime),
 		engine.WithHorizon(engine.Time(horizon/time.Millisecond)),
 		engine.WithExitWhenIdle(true),
 	)
@@ -206,15 +206,20 @@ func (s *studio) finish(t tables, added int) {
 func locate(p model.Project, experimentID string) (model.Agent, model.Experiment, error) {
 	var agent model.Agent
 	var exp model.Experiment
-	foundA, foundE := false, false
-	for _, item := range p.Agents {
-		if item.ID == "main" {
-			agent, foundA = item, true
-		}
-	}
+	foundE := false
 	for _, item := range p.Experiments {
 		if item.ID == experimentID {
 			exp, foundE = item, true
+		}
+	}
+	want := exp.Page
+	if want == "" {
+		want = "main"
+	}
+	foundA := false
+	for _, item := range p.Agents {
+		if item.ID == want {
+			agent, foundA = item, true
 		}
 	}
 	if !foundA || !foundE {
@@ -245,6 +250,11 @@ func linkAll(coord *engine.Coordinator, agent model.Agent, added map[string]bool
 }
 
 func canon(name string) string { return strings.ReplaceAll(name, " ", "") }
+
+func textOf(v any) string {
+	text, _ := v.(string)
+	return text
+}
 
 func portName(prefix string, n int) string {
 	if n <= 0 {
