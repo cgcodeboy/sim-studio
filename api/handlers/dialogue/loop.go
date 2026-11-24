@@ -22,6 +22,7 @@ type planStep struct {
 	To      string   `json:"to"`
 	Chain   bool     `json:"chain"`
 	Run     bool     `json:"run"`
+	Lines   int      `json:"lines,omitempty"`
 }
 
 type plan struct {
@@ -129,7 +130,7 @@ func executePlan(ctx context.Context, call skillCall, planned plan) (Task, bool)
 	}
 	placed.Intent = "place"
 	placed.Types = types
-	return finish(placed), true
+	return widen(finish(placed), call.in.Text), true
 }
 
 func review(ctx context.Context, call skillCall, planned plan, task Task) (bool, string) {

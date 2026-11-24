@@ -8,6 +8,9 @@ import (
 )
 
 func layoutFromSkill(ctx context.Context, call skillCall, gap int, extra []string) (Task, bool) {
+	if len(roster(openAgent(call.in), extra)) >= 80 {
+		return fitted(call.in, gap, extra), true
+	}
 	return reviseLayout(ctx, call, gap, extra)
 }
 

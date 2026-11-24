@@ -6,6 +6,7 @@ import (
 )
 
 func executeAll(ctx context.Context, call skillCall, planned plan) (Task, bool) {
+	planned.Steps = foldCopies(planned.Steps, call.in.Text)
 	var actions []Task
 	var batch []planStep
 	flush := func() bool {
@@ -42,6 +43,16 @@ func executeAll(ctx context.Context, call skillCall, planned plan) (Task, bool) 
 			}
 			actions = append(actions, task)
 			continue
+		}
+		if step.Lines >= 2 && len(step.Types) > 0 {
+			if !flush() {
+				return Task{}, false
+			}
+			task, ok := repeatedPlace(step, call.in.Page, call.known)
+			if ok {
+				actions = append(actions, task)
+				continue
+			}
 		}
 		batch = append(batch, step)
 	}
@@ -89,8 +100,12 @@ func pack(actions []Task, say string) Task {
 		return Task{}
 	}
 	head := actions[0]
-	if len(actions) > 1 {
-		head.More = actions[1:]
+	rest := actions[1:]
+	if len(head.More) > 0 {
+		rest = append(append([]Task{}, head.More...), rest...)
+	}
+	if len(rest) > 0 {
+		head.More = rest
 	}
 	if strings.TrimSpace(say) != "" {
 		head.Reply = strings.TrimSpace(say)

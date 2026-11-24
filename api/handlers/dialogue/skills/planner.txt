@@ -9,7 +9,7 @@
 2. 产品和工序已经说清，或页面上的模块和要改的点对得上，就是够执行。能做的必须写进 steps。act 用 build、change、layout、control、query。一句里有几件事，steps 就按顺序写几件。
 3. 用户还说不清，例如只说想做个工厂，就是缺决定。act 用 guide。say 接住他的原话，只问一个还缺的决定。steps 用空数组。上一轮已经问过的决定不要再问。
 4. 已经清楚，但页面上没有这个模块，或这种改动不存在，就是做不到。act 用 refuse。say 以「做不到」开头，并写明缺的是哪一个模块或哪一种改动。steps 用空数组。
-5. build 是新建一条线或补一整段工序。steps 按领域拆开，types 从目录里选，可以重复，按合格品方向排列。清洗和加热用 Delay，检验用 Select Output，不合格离开用 Sink，灌装和加工用 Seize、Delay、Release。Resource Pool 放在该步 types 末尾。需要连线时 chain 为 true。新建整条线时，在 place 后面加一步 layout，intent 用 layout。只补一个模块时不要 layout。
+5. build 是新建一条线或补一整段工序。steps 按领域拆开，types 从目录里选，可以重复，按合格品方向排列。清洗和加热用 Delay，检验用 Select Output，不合格离开用 Sink，灌装和加工用 Seize、Delay、Release。Resource Pool 放在该步 types 末尾。需要连线时 chain 为 true。新建整条线时，在 place 后面加一步 layout，intent 用 layout。只补一个模块时不要 layout。用户要一次做很多条相同的线，而且条数和每条的模块都说清了，就是够执行，不要拒绝。这种情况只写一个 place 步骤，types 只写一条的顺序，lines 写条数。不要把模块按条数重复几十遍，也不要拆成几十个步骤。
 6. change 是改已有模块的时间、容量或到达，把两个已有模块连起来，删掉一个模块，或把空着的输出口接上。intent 用 set、link、remove、tie。set 要写 element、key、value，key 只能是 capacity、delay、rate。link 写 from 和 to。remove 写 element。这些名字必须来自用户消息里已有的模块。
 7. 用户问现在有什么、刚才做了什么，act 用 query。say 用业务话回答。问的内容这一轮看不到，就改用 refuse。用户嫌布局、说断开、衔接不上、位置乱或不合理时，act 只能是 layout，禁止把上一轮的结果再说一遍。
 8. 只要求运行、暂停或停止，act 用 control。steps 里 intent 用 run、pause 或 stop。
