@@ -4,24 +4,8 @@ import (
 	"context"
 	"log"
 	"math"
-	"net/http"
 	"strings"
-
-	"github.com/cgcodeboy/sim-studio/api/handlers/respond"
 )
-
-type conflictBody struct {
-	Input
-	Places []Place `json:"places"`
-}
-
-func (h *Handler) Conflicts(w http.ResponseWriter, r *http.Request) {
-	var body conflictBody
-	if err := respond.Decode(w, r, &body); err != nil {
-		return
-	}
-	respond.WriteJSON(w, http.StatusOK, map[string]any{"conflicts": conflicts(body.Input, body.Places, nil)})
-}
 
 func reviseLayout(ctx context.Context, call skillCall, gap int, extra []string) (Task, bool) {
 	user := layoutUser(call.in, plan{Gap: gap}, extra)
@@ -32,18 +16,6 @@ func reviseLayout(ctx context.Context, call skillCall, gap int, extra []string) 
 	}
 	if why != "" || len(task.Places) == 0 {
 		return fitted(call.in, gap, extra), true
-	}
-	for round := 0; round < 2; round++ {
-		notes := conflicts(call.in, task.Places, extra)
-		if len(notes) == 0 {
-			break
-		}
-		log.Printf("dialogue: conflict %s", strings.Join(notes, "；"))
-		next, again := askLayout(ctx, call, user+conflictAsk(notes), extra)
-		if again != "" || len(next.Places) == 0 {
-			break
-		}
-		task = next
 	}
 	return doneLayout(call.in, task, gap, extra), true
 }
@@ -61,31 +33,17 @@ func doneLayout(in Input, task Task, gap int, extra []string) Task {
 	if page == "" {
 		page = "Main"
 	}
-	notes := conflicts(in, task.Places, extra)
+	task.Places = weld(in, task.Places, extra)
+	if notes := conflicts(in, task.Places, extra); len(notes) > 0 {
+		log.Printf("dialogue: conflict %s", strings.Join(notes, "；"))
+	}
 	task.Intent = "layout"
 	task.Agent = page
 	task.Gap = layoutGap(gap)
-	task.Reply = withNotes(task.Reply, notes)
+	if strings.TrimSpace(task.Reply) == "" {
+		task.Reply = "已按连线接好端面，资源站在设备旁边。"
+	}
 	return finish(task)
-}
-
-func conflictAsk(notes []string) string {
-	return "\n冲突检测：\n" + strings.Join(notes, "\n") + "\n按这些冲突改位置、朝向、高度和长度。没有点名的模块保持不动。只输出 JSON。"
-}
-
-func withNotes(reply string, notes []string) string {
-	reply = strings.TrimSpace(reply)
-	if len(notes) == 0 {
-		if reply == "" {
-			return "已按冲突检测调过布局。"
-		}
-		return reply
-	}
-	tail := "仍有冲突：" + strings.Join(notes, "；") + "。"
-	if reply == "" {
-		return tail
-	}
-	return reply + tail
 }
 
 func conflicts(in Input, spots []Place, extra []string) []string {
@@ -157,7 +115,7 @@ func linkNote(link pageLink, members map[string]member, at map[string]Place) str
 		return apart(from.name, to.name, spanEnd(left.Pose, false), faceIn(right.Pose, to.kind))
 	}
 	if stationKind(from.kind) && stationKind(to.kind) {
-		return apart(from.name, to.name, faceOut(left.Pose, from.kind), faceIn(right.Pose, to.kind))
+		return apart(from.name, to.name, exitPoint(left.Pose, from.kind, link.FromPort), faceIn(right.Pose, to.kind))
 	}
 	return ""
 }
